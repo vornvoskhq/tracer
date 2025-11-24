@@ -33,6 +33,24 @@ def find_enclosing_function(
 
     best_match: Optional[Tuple[str, int, int]] = None
 
+    def _compute_end_lineno(node, fallback: int) -> int:
+        """
+        Best-effort computation of an end line number for AST nodes that do not
+        have end_lineno populated (older Python versions).
+
+        We walk all child nodes and take the maximum lineno we can find.
+        """
+        end = getattr(node, "end_lineno", None)
+        if isinstance(end, int):
+            return end
+
+        max_line = fallback
+        for child in ast.walk(node):
+            child_line = getattr(child, "lineno", None)
+            if isinstance(child_line, int) and child_line > max_line:
+                max_line = child_line
+        return max_line
+
     class FuncVisitor(ast.NodeVisitor):
         def visit_FunctionDef(self, node: ast.FunctionDef):  # type: ignore[override]
             self._maybe_update_best(node)
@@ -52,9 +70,11 @@ def find_enclosing_function(
             nonlocal best_match
 
             start = getattr(node, "lineno", None)
-            end = getattr(node, "end_lineno", None)
-            if start is None or end is None:
+            if start is None:
                 return
+
+            # Compute an end line even if end_lineno is not available.
+            end = _compute_end_lineno(node, start)
 
             # Include decorators if present so that @dataclass and similar
             # decorators are part of the displayed region.

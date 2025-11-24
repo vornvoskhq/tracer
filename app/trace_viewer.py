@@ -195,14 +195,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
-        # Guard the context menu hook so that a missing handler cannot break
-        # startup. If the handler exists on this instance, we connect it.
-        try:
-            handler = self._on_left_tree_context_menu  # type: ignore[attr-defined]
-        except AttributeError:
-            handler = None
-        if handler is not None:
-            self.left_tree.customContextMenuRequested.connect(handler)
+        # Right-click context menu on the left tree
+        self.left_tree.customContextMenuRequested.connect(
+            self._on_left_tree_context_menu
+        )
         self.summary_button.clicked.connect(self._on_summarize_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
@@ -529,6 +525,45 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Handle function execution entries
         if kind == "func":
             call: FunctionCallView = obj
+
+            # Special-case module-level entries: show the full file in the
+            # right-hand editor instead of trying to extract a function span.
+            if call.function == "<module>":
+                file_path = (self._current_codebase / call.file).resolve()
+                if not file_path.exists():
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "File Not Found",
+                        f"Could not locate file:\n{file_path}",
+                    )
+                    return
+
+                try:
+                    text = file_path.read_text(encoding="utf-8")
+                except OSError as exc:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Error Reading File",
+                        f"Could not read file:\n{file_path}\n\nError: {exc}",
+                    )
+                    return
+
+                # Show full file starting at line 1
+                self.editor.set_code(text, base_line=1)
+
+                # Position the cursor near the call line, if we have one
+                if call.line > 0:
+                    line_index = max(call.line - 1, 0)
+                    self.editor.setCursorPosition(line_index, 0)
+
+                if hasattr(self, "editor_label"):
+                    try:
+                        rel_display = file_path.relative_to(self._current_codebase)
+                    except ValueError:
+                        rel_display = file_path
+                    self.editor_label.setText(f"File: {rel_display}")
+                return
+
             file_path = (self._current_codebase / call.file).resolve()
             if not file_path.exists():
                 QtWidgets.QMessageBox.warning(
@@ -654,61 +689,22 @@ class TraceViewerWidget(QtWidgets.QWidget):
         """
         Stop background threads cleanly. Intended to be called on application exit.
 
-        This prints debug information to the console about any worker threads
-        that were still running at shutdown time so that unexpected exits can
-        be diagnosed more easily.
+        This method now runs quietly unless there is actually work to do, so it
+        does not spam the console on every shutdown.
         """
-        print("[TraceViewerWidget] cleanup_threads: starting thread cleanup")
-
         # Trace worker
         if self._trace_worker is not None:
-            print(
-                "[TraceViewerWidget] cleanup_threads: trace worker object present: "
-                f"{self._trace_worker!r}, isRunning={self._trace_worker.isRunning()}"
-            )
             if self._trace_worker.isRunning():
-                print(
-                    "[TraceViewerWidget] cleanup_threads: trace worker still running, "
-                    "requesting quit() and waiting for it to exit..."
-                )
                 self._trace_worker.quit()
                 self._trace_worker.wait()
-                print(
-                    "[TraceViewerWidget] cleanup_threads: trace worker exited cleanly."
-                )
-            else:
-                print(
-                    "[TraceViewerWidget] cleanup_threads: trace worker exists but is not running."
-                )
             self._trace_worker = None
-        else:
-            print("[TraceViewerWidget] cleanup_threads: no trace worker to clean up")
 
         # LLM worker
         if self._llm_worker is not None:
-            print(
-                "[TraceViewerWidget] cleanup_threads: LLM worker object present: "
-                f"{self._llm_worker!r}, isRunning={self._llm_worker.isRunning()}"
-            )
             if self._llm_worker.isRunning():
-                print(
-                    "[TraceViewerWidget] cleanup_threads: LLM worker still running, "
-                    "requesting quit() and waiting for it to exit..."
-                )
                 self._llm_worker.quit()
                 self._llm_worker.wait()
-                print(
-                    "[TraceViewerWidget] cleanup_threads: LLM worker exited cleanly."
-                )
-            else:
-                print(
-                    "[TraceViewerWidget] cleanup_threads: LLM worker exists but is not running."
-                )
             self._llm_worker = None
-        else:
-            print("[TraceViewerWidget] cleanup_threads: no LLM worker to clean up")
-
-        print("[TraceViewerWidget] cleanup_threads: finished thread cleanup")
 
 
 class _TraceWorker(QtCore.QThread):
