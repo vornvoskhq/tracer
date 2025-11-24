@@ -218,21 +218,25 @@ def trace_calls(frame, event, arg):
     filename = frame.f_code.co_filename
     function_name = frame.f_code.co_name
     line_no = frame.f_lineno
+
+    # Decide if this frame should be traced
+    trace_this = should_trace(filename, function_name)
     
-    # Depth tracking
+    # Depth tracking only for traced frames
     if event == 'call':
+        if not trace_this:
+            return trace_calls
         TRACE_DATA["current_depth"] += 1
+        # Limit depth
+        if TRACE_DATA["current_depth"] > 50:
+            TRACE_DATA["current_depth"] -= 1
+            return trace_calls
     elif event == 'return':
-        TRACE_DATA["current_depth"] -= 1
+        if trace_this and TRACE_DATA["current_depth"] > 0:
+            TRACE_DATA["current_depth"] -= 1
         return trace_calls
     
-    # Limit depth
-    if TRACE_DATA["current_depth"] > 50:
-        TRACE_DATA["current_depth"] -= 1
-        return trace_calls
-    
-    # Only trace relevant files
-    if not should_trace(filename, function_name):
+    if not trace_this:
         return trace_calls
     
     try:
@@ -253,7 +257,7 @@ def trace_calls(frame, event, arg):
             if len(parts) > 1:
                 rel_path = "lib/" + parts[-1]
         
-        func_key = f"{{rel_path}}::{{function_name}}"
+        func_key = f"{rel_path}::{function_name}"
         
         # Update counters
         TRACE_DATA["functions"][func_key] += 1
@@ -261,17 +265,17 @@ def trace_calls(frame, event, arg):
         TRACE_DATA["sequence"].append(func_key)
         
         # Store call details with line number
-        call_info = {{
+        call_info = {
             "function": function_name,
             "file": rel_path,
             "line": line_no,
             "timestamp": time.time() - TRACE_DATA["start_time"],
             "depth": TRACE_DATA["current_depth"]
-        }}
+        }
         TRACE_DATA["calls"].append(call_info)
         
         # Also store in sequence with line number for easy access
-        func_with_line = f"{{rel_path}}::{{function_name}}:{{line_no}}"
+        func_with_line = f"{rel_path}::{function_name}:{line_no}"
         TRACE_DATA["sequence_with_lines"] = TRACE_DATA.get("sequence_with_lines", [])
         TRACE_DATA["sequence_with_lines"].append(func_with_line)
         
@@ -455,9 +459,8 @@ if __name__ == "__main__":
         Trace VGMini command with proper main execution.
         """
         print(f"🔍 Tracing: {command}")
-        print(f"📁 Codebase: {self.codebase_name} ({self.target_dir})")
-        print(f"🎯 Entry Point: {self.entry_point}")
-        print(f"🐍 Using Python: {self.target_python}")
+        # Compact startup summary to avoid verbose output
+        print(f"📁 {self.codebase_name} | entry: {self.entry_point} | python: {self.target_python}")
         
         # Parse command
         cmd_parts = command.strip().split()
@@ -623,11 +626,13 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
     output.append("")
     
     # Main focus: Execution Order as a table (no truncation)
-    calls = getattr(trace, "calls", None)
+    raw_calls = getattr(trace, "calls", []) or []
+    # Hide lambda frames in the report
+    calls = [c for c in raw_calls if c.get("function") != "<lambda>"]
     if calls:
-        output.append("📞 Function Execution Order (Call Order, Depth, File, Function, Line):")
-        # Header
-        output.append("CallOrder\tDepth\tFile\tFunction\tLine")
+        output.append("📞 Function Execution Order (Call, Depth, File, Func, Line):")
+        # Header with short names to improve alignment
+        output.append("Call\tDepth\tFile\tFunc\tLine")
         for idx, call in enumerate(calls, start=1):
             file_name = call.get("file", "")
             func_name = call.get("function", "")
@@ -637,16 +642,45 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
         output.append("")
     
     # External file I/O events (text, config, pickle, images, etc.)
-    file_accesses = getattr(trace, "file_accesses", None)
-    if file_accesses:
-        output.append("📁 External File I/O Events (Order, Time(s), Access Type, Mode, File):")
-        output.append("Order\tTime(s)\tAccessType\tMode\tFile")
-        for idx, access in enumerate(file_accesses, start=1):
-            ts = access.get("timestamp", 0.0)
+    file_accesses = getattr(trace, "file_accesses", []) or []
+    # Filter out .venv and .py files (keep configs, text, pickle, images, etc.)
+    filtered_accesses = []
+    for a in file_accesses:
+        file_path = a.get("file", "") or ""
+        if ".venv/" in file_path:
+            continue
+        if file_path.endswith(".py"):
+            continue
+        filtered_accesses.append(a)
+    
+    if filtered_accesses:
+        # Build a mapping from access -> calling function/file using timestamps
+        caller_info = []
+        call_index = 0
+        n_calls = len(calls)
+        for access in filtered_accesses:
+            access_ts = access.get("timestamp", 0.0)
+            # Advance call_index while the call timestamp is <= access timestamp
+            while call_index + 1 < n_calls and calls[call_index + 1].get("timestamp", 0.0) <= access_ts:
+                call_index += 1
+            if n_calls > 0:
+                caller = calls[call_index]
+                caller_info.append((
+                    access,
+                    caller.get("file", ""),
+                    caller.get("function", ""),
+                    caller.get("line", "")
+                ))
+            else:
+                caller_info.append((access, "", "", ""))
+        
+        output.append("📁 External File I/O Events (Order, AccessType, Mode, File, CallerFile, CallerFunc, CallerLine):")
+        output.append("Order\tAccessType\tMode\tFile\tCallerFile\tCallerFunc\tCallerLine")
+        for idx, (access, c_file, c_func, c_line) in enumerate(caller_info, start=1):
             access_type = access.get("access_type", "")
             mode = access.get("mode", "")
             file_path = access.get("file", "")
-            output.append(f"{idx}\t{ts:.3f}\t{access_type}\t{mode}\t{file_path}")
+            output.append(f"{idx}\t{access_type}\t{mode}\t{file_path}\t{c_file}\t{c_func}\t{c_line}")
         output.append("")
     
     return "\n".join(output)
