@@ -807,26 +807,31 @@ class _TraceWorker(QtCore.QThread):
 
             # Simple classification cache to avoid reparsing the same file
             ast_cache: Dict[Path, ast.AST] = {}
+            class_names_cache: Dict[Path, set] = {}
 
             def classify_kind(file_rel: str, func_name: str, line_no: int) -> str:
                 """
                 Classify the kind of call for UI purposes:
 
                   - "Module" for <module> entries
-                  - "Class"  when the enclosing AST node is a ClassDef
+                  - "Class"  for class bodies AND constructor calls
                   - "Func"   otherwise
+
+                A call is treated as "Class" if either:
+                  * the enclosing AST node is a ClassDef, or
+                  * the function name matches a class defined in the file.
                 """
                 if func_name == "<module>":
                     return "Module"
 
-                if not file_rel or not line_no:
+                if not file_rel:
                     return "Func"
 
                 file_path = (self._codebase / file_rel).resolve()
                 if not file_path.exists():
                     return "Func"
 
-                # Load and cache the AST for this file
+                # Load and cache the AST and class names for this file
                 tree = ast_cache.get(file_path)
                 if tree is None:
                     try:
@@ -835,6 +840,25 @@ class _TraceWorker(QtCore.QThread):
                     except Exception:
                         return "Func"
                     ast_cache[file_path] = tree
+
+                    # Collect class names defined in this file for constructor classification
+                    names = set()
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ClassDef):
+                            names.add(node.name)
+                    class_names_cache[file_path] = names
+
+                class_names = class_names_cache.get(file_path, set())
+
+                # If the function name matches a class name in the file, treat it
+                # as a Class call (constructor) even if the enclosing node is not
+                # directly the class body.
+                if func_name in class_names:
+                    return "Class"
+
+                # If we have no line information, we cannot refine further.
+                if not line_no:
+                    return "Func"
 
                 best_node = None
                 best_span: Optional[int] = None  # length of span (end - start)
