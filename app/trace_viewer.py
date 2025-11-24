@@ -17,6 +17,7 @@ class FunctionCallView:
     file: str
     function: str
     line: int
+    depth: int
 
 
 @dataclass
@@ -42,8 +43,9 @@ class CodeEditor(QsciScintilla):
         # Line numbers
         self.setMarginType(0, QsciScintilla.NumberMargin)
         self.setMarginWidth(0, "0000")
-        self.setMarginsForegroundColor(QtCore.Qt.gray)
-        self.setMarginsBackgroundColor(QtCore.Qt.lightGray)
+        # Improve contrast of line numbers vs background
+        self.setMarginsForegroundColor(QtCore.Qt.black)
+        self.setMarginsBackgroundColor(QtCore.Qt.white)
 
         # Basic editor settings
         self.setTabWidth(4)
@@ -111,12 +113,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Combined function execution and file I/O tree
         self.left_tree = QtWidgets.QTreeWidget(top_left)
+        # Columns: Order, Depth, Kind, File, Function, Line/Mode
         self.left_tree.setHeaderLabels(
-            ["Order", "Kind", "File/Func", "Line/Mode", "Extra"]
+            ["Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
         )
         self.left_tree.setColumnWidth(0, 60)
-        self.left_tree.setColumnWidth(1, 80)
-        self.left_tree.setColumnWidth(2, 260)
+        self.left_tree.setColumnWidth(1, 60)
+        self.left_tree.setColumnWidth(2, 70)
+        self.left_tree.setColumnWidth(3, 220)
+        self.left_tree.setColumnWidth(4, 140)
         top_left_layout.addWidget(self.left_tree, stretch=1)
 
         # Bottom-left: summary area
@@ -155,8 +160,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def set_codebase(self, path: Path):
         self._current_codebase = path
-        # Update label to reflect current codebase
-        self.codebase_label.setText(f"Codebase: {path}")
+        # Update label to reflect current codebase (just top-level directory)
+        self.codebase_label.setText(f"Codebase: {path.name}")
 
     def set_command(self, command: str):
         self._current_command = command
@@ -230,42 +235,40 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Populate tree with collapsible groups
         root_execution = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "Exec", "Function Execution Order", "", ""]
+            self.left_tree, ["", "", "Exec", "Function Execution Order", "", ""]
         )
         root_execution.setExpanded(True)
 
         for call in function_calls:
-            label = f"{call.file}::{call.function}"
-            extra = ""
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
-                    str(call.index),
-                    "Func",
-                    label,
-                    str(call.line),
-                    extra,
+                    str(call.index),          # Order
+                    str(call.depth),          # Depth
+                    "Func",                   # Kind
+                    call.file,                # File
+                    call.function,            # Function
+                    str(call.line),           # Line
                 ],
             )
             # Store metadata for click handling
             item.setData(0, QtCore.Qt.UserRole, ("func", call))
 
         root_io = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "I/O", "External File I/O", "", ""]
+            self.left_tree, ["", "", "I/O", "External File I/O", "", ""]
         )
         root_io.setExpanded(True)
 
         for fa in file_accesses:
-            label = fa.file_path
-            extra = f"{fa.src_file}::{fa.src_func}:{fa.src_line}"
             item = QtWidgets.QTreeWidgetItem(
                 root_io,
                 [
-                    str(fa.index),
-                    fa.mode,
-                    label,
-                    "",
-                    extra,
+                    str(fa.index),           # Order
+                    "",                      # Depth (not applicable)
+                    fa.mode,                 # Kind / mode
+                    fa.file_path,            # File
+                    f"{fa.src_file}:{fa.src_func}",  # Function context
+                    str(fa.src_line) if fa.src_line else "",  # Line
                 ],
             )
             item.setData(0, QtCore.Qt.UserRole, ("io", fa))
@@ -409,57 +412,94 @@ class _TraceWorker(QtCore.QThread):
             function_calls: List[FunctionCallView] = []
             file_accesses: List[FileAccessView] = []
 
-            # Build function execution order with line numbers where possible
-            sequence_with_lines = getattr(trace, "call_sequence_with_lines", None)
-            if sequence_with_lines:
-                for idx, entry in enumerate(sequence_with_lines, start=1):
-                    # entry: "file.py::func:line"
-                    file_part, rest = entry.split("::", 1)
-                    if ":" in rest:
-                        func_name, line_str = rest.split(":", 1)
-                        try:
-                            line_no = int(line_str)
-                        except ValueError:
-                            line_no = 0
-                    else:
-                        func_name = rest
-                        line_no = 0
-
+            # Build function execution order from full call records if available
+            calls_raw: List[Dict[str, Any]] = getattr(trace, "calls", []) or []
+            if calls_raw:
+                for idx, c in enumerate(calls_raw, start=1):
+                    func_name = c.get("function", "")
+                    # Filter out lambda functions
+                    if func_name == "<lambda>":
+                        continue
                     function_calls.append(
                         FunctionCallView(
                             index=idx,
-                            file=file_part,
+                            file=c.get("file", ""),
                             function=func_name,
-                            line=line_no,
+                            line=int(c.get("line", 0) or 0),
+                            depth=int(c.get("depth", 0) or 0),
                         )
                     )
             else:
-                # Fallback to call_sequence without line numbers
-                for idx, entry in enumerate(trace.call_sequence, start=1):
-                    if "::" in entry:
-                        file_part, func_name = entry.split("::", 1)
-                    else:
-                        file_part, func_name = "", entry
-                    function_calls.append(
-                        FunctionCallView(
-                            index=idx,
-                            file=file_part,
-                            function=func_name,
-                            line=0,
-                        )
-                    )
+                # Fallback to call_sequence with or without line numbers
+                sequence_with_lines = getattr(trace, "call_sequence_with_lines", None)
+                if sequence_with_lines:
+                    for idx, entry in enumerate(sequence_with_lines, start=1):
+                        # entry: "file.py::func:line"
+                        file_part, rest = entry.split("::", 1)
+                        if ":" in rest:
+                            func_name, line_str = rest.split(":", 1)
+                            try:
+                                line_no = int(line_str)
+                            except ValueError:
+                                line_no = 0
+                        else:
+                            func_name = rest
+                            line_no = 0
 
-            # External file I/O
+                        if func_name == "<lambda>":
+                            continue
+
+                        function_calls.append(
+                            FunctionCallView(
+                                index=idx,
+                                file=file_part,
+                                function=func_name,
+                                line=line_no,
+                                depth=0,
+                            )
+                        )
+                else:
+                    # Fallback to call_sequence without line numbers
+                    for idx, entry in enumerate(trace.call_sequence, start=1):
+                        if "::" in entry:
+                            file_part, func_name = entry.split("::", 1)
+                        else:
+                            file_part, func_name = "", entry
+
+                        if func_name == "<lambda>":
+                            continue
+
+                        function_calls.append(
+                            FunctionCallView(
+                                index=idx,
+                                file=file_part,
+                                function=func_name,
+                                line=0,
+                                depth=0,
+                            )
+                        )
+
+            # External file I/O with filtering
             file_accesses_raw: List[Dict[str, Any]] = getattr(trace, "file_accesses", []) or []
             for idx, fa in enumerate(file_accesses_raw, start=1):
+                file_path = fa.get("file", "") or ""
+                # Filter out virtualenv and standard-library style paths
+                skip = False
+                for pattern in ("/.venv/", "\\\\.venv\\\\", "site-packages", "/lib/python", "\\\\Lib\\\\"):
+                    if pattern in file_path:
+                        skip = True
+                        break
+                if skip:
+                    continue
+
                 file_accesses.append(
                     FileAccessView(
                         index=idx,
                         mode=fa.get("mode", ""),
                         src_file=fa.get("src_file", ""),
                         src_func=fa.get("src_func", ""),
-                        src_line=fa.get("src_line", 0),
-                        file_path=fa.get("file", ""),
+                        src_line=int(fa.get("src_line", 0) or 0),
+                        file_path=file_path,
                     )
                 )
 

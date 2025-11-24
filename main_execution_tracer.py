@@ -39,6 +39,8 @@ class ExecutionTrace:
     files_opened: Dict[str, int] = None
     error_output: str = ""
     success: bool = True
+    # Full call records (including depth, file, function, line, timestamp)
+    calls: Optional[List[Dict]] = None
 
 
 class MainExecutionTracer:
@@ -323,18 +325,35 @@ def main():
                     rel_file = file_str.replace("{target_dir_str}/", "")
                 else:
                     rel_file = file_str
+
+                # Identify caller (file, function, line) for better attribution
+                src_file = ""
+                src_func = ""
+                src_line = 0
+                try:
+                    frame = sys._getframe(1)
+                    src_file = frame.f_code.co_filename or ""
+                    src_func = frame.f_code.co_name or ""
+                    src_line = frame.f_lineno or 0
+                    if "{target_dir_str}" in src_file:
+                        src_file = src_file.replace("{target_dir_str}/", "")
+                except Exception:
+                    pass
                 
                 # Track the access
                 access_type = "read" if 'r' in mode else "write" if 'w' in mode or 'a' in mode else "read"
-                TRACE_DATA["file_accesses"].append({{
+                TRACE_DATA["file_accesses"].append({
                     "file": rel_file,
                     "mode": mode,
                     "access_type": access_type,
-                    "timestamp": time.time() - TRACE_DATA["start_time"]
-                }})
+                    "timestamp": time.time() - TRACE_DATA["start_time"],
+                    "src_file": src_file,
+                    "src_func": src_func,
+                    "src_line": src_line,
+                })
                 TRACE_DATA["files_opened"][rel_file] += 1
                 
-                print(f"📁 {{access_type.upper()}}: {{rel_file}} ({{mode}})")
+                print(f"📁 {access_type.upper()}: {rel_file} ({mode}) from {src_file}::{src_func}:{src_line}")
                 
             except Exception:
                 pass  # Don't break file operations if tracking fails
@@ -360,15 +379,32 @@ def main():
                         rel_file = file_name.replace("{target_dir_str}/", "")
                     else:
                         rel_file = file_name
+
+                    # Caller info
+                    src_file = ""
+                    src_func = ""
+                    src_line = 0
+                    try:
+                        frame = sys._getframe(1)
+                        src_file = frame.f_code.co_filename or ""
+                        src_func = frame.f_code.co_name or ""
+                        src_line = frame.f_lineno or 0
+                        if "{target_dir_str}" in src_file:
+                            src_file = src_file.replace("{target_dir_str}/", "")
+                    except Exception:
+                        pass
                     
-                    TRACE_DATA["file_accesses"].append({{
+                    TRACE_DATA["file_accesses"].append({
                         "file": rel_file,
                         "mode": "pickle_load",
                         "access_type": "read",
-                        "timestamp": time.time() - TRACE_DATA["start_time"]
-                    }})
+                        "timestamp": time.time() - TRACE_DATA["start_time"],
+                        "src_file": src_file,
+                        "src_func": src_func,
+                        "src_line": src_line,
+                    })
                     TRACE_DATA["files_opened"][rel_file] += 1
-                    print(f"🥒 PICKLE LOAD: {{rel_file}}")
+                    print(f"🥒 PICKLE LOAD: {rel_file} from {src_file}::{src_func}:{src_line}")
                 except Exception:
                     pass
                 return original_pickle_load(file)
@@ -381,15 +417,32 @@ def main():
                         rel_file = file_name.replace("{target_dir_str}/", "")
                     else:
                         rel_file = file_name
+
+                    # Caller info
+                    src_file = ""
+                    src_func = ""
+                    src_line = 0
+                    try:
+                        frame = sys._getframe(1)
+                        src_file = frame.f_code.co_filename or ""
+                        src_func = frame.f_code.co_name or ""
+                        src_line = frame.f_lineno or 0
+                        if "{target_dir_str}" in src_file:
+                            src_file = src_file.replace("{target_dir_str}/", "")
+                    except Exception:
+                        pass
                     
-                    TRACE_DATA["file_accesses"].append({{
+                    TRACE_DATA["file_accesses"].append({
                         "file": rel_file,
                         "mode": "pickle_dump",
                         "access_type": "write",
-                        "timestamp": time.time() - TRACE_DATA["start_time"]
-                    }})
+                        "timestamp": time.time() - TRACE_DATA["start_time"],
+                        "src_file": src_file,
+                        "src_func": src_func,
+                        "src_line": src_line,
+                    })
                     TRACE_DATA["files_opened"][rel_file] += 1
-                    print(f"🥒 PICKLE SAVE: {{rel_file}}")
+                    print(f"🥒 PICKLE SAVE: {rel_file} from {src_file}::{src_func}:{src_line}")
                 except Exception:
                     pass
                 return original_pickle_dump(obj, file)
