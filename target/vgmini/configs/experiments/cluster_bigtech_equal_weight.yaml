@@ -1,0 +1,30 @@
+# YAML experiment: cluster_bigtech_equal_weight
+name: cluster_bigtech_equal_weight
+description: Equal-weight dual using big_tech cluster resolved from clusters.yaml or cluster-analysis.json
+
+universe:
+  cluster: big_tech
+
+features:
+  enabled:
+    - price_above_ema9
+    - price_above_ema30
+    - ema9_above_ema30
+    - ema_spread_accelerating
+    - macd_above_signal
+    - macd_above_zero
+    - signal_above_zero
+    - macd_positive_hist
+    - volume_above_average
+    - volume_ratio
+    - ha_uptrend
+
+model:
+  type: equal_weight
+  ew_correlation_signs: true
+  ew_calibrate_prior: true
+  ew_activation_threshold: 0.0
+  ew_temperature: 0.75
+  ew_buy_aggregation: fraction
+  ew_sell_aggregation: any_deactivated
+

@@ -1,0 +1,48 @@
+ table_schema |   table_name    |     column_name      |        data_type         
+--------------+-----------------+----------------------+--------------------------
+ public       | data_gaps       | id                   | integer
+ public       | data_gaps       | symbol_id            | integer
+ public       | data_gaps       | interval             | text
+ public       | data_gaps       | start_time           | bigint
+ public       | data_gaps       | end_time             | bigint
+ public       | data_gaps       | expected_points      | integer
+ public       | data_gaps       | actual_points        | integer
+ public       | data_gaps       | error_percentage     | double precision
+ public       | data_gaps       | created_at           | timestamp with time zone
+ public       | interval_config | interval             | text
+ public       | interval_config | min_storage_days     | integer
+ public       | interval_config | max_storage_days     | integer
+ public       | interval_config | update_frequency     | integer
+ public       | interval_config | gap_threshold        | integer
+ public       | interval_config | quality_threshold    | double precision
+ public       | interval_config | display_points       | integer
+ public       | interval_config | memory_cache         | boolean
+ public       | interval_config | historical_retention | integer
+ public       | interval_config | description          | text
+ public       | interval_config | created_at           | timestamp with time zone
+ public       | interval_config | updated_at           | timestamp with time zone
+ public       | ohlc_data       | id                   | bigint
+ public       | ohlc_data       | symbol_id            | integer
+ public       | ohlc_data       | timestamp            | bigint
+ public       | ohlc_data       | open                 | double precision
+ public       | ohlc_data       | high                 | double precision
+ public       | ohlc_data       | low                  | double precision
+ public       | ohlc_data       | close                | double precision
+ public       | ohlc_data       | volume               | bigint
+ public       | ohlc_data       | interval             | text
+ public       | ohlc_data       | created_at           | timestamp with time zone
+ public       | ohlc_data       | updated_at           | timestamp with time zone
+ public       | ohlc_data       | is_final             | boolean
+ public       | ohlc_metadata   | ohlc_id              | bigint
+ public       | ohlc_metadata   | source_time          | bigint
+ public       | ohlc_metadata   | data_quality         | double precision
+ public       | ohlc_metadata   | has_gap              | boolean
+ public       | ohlc_metadata   | created_at           | timestamp with time zone
+ public       | ohlc_metadata   | updated_at           | timestamp with time zone
+ public       | symbols         | id                   | integer
+ public       | symbols         | symbol               | text
+ public       | symbols         | name                 | text
+ public       | symbols         | created_at           | timestamp with time zone
+ public       | symbols         | updated_at           | timestamp with time zone
+(44 rows)
+

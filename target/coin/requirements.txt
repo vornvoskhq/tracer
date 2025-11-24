@@ -1,0 +1,23 @@
+# Solana and SPL Token dependencies
+solana==0.30.2
+solders==0.18.1
+anchorpy==0.18.0
+
+# Web framework
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+
+# Database and utilities
+sqlalchemy==2.0.23
+python-dotenv==1.0.0
+httpx
+cryptography==41.0.7
+
+# For geolocation validation
+geopy==2.4.0
+haversine==2.8.0
+
+# For token metadata
+requests==2.31.0
+Pillow==10.1.0

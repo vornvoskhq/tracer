@@ -1,0 +1,28 @@
+{
+  "buy_model": {
+    "price_above_ema9": -0.09090909090909091,
+    "price_above_ema30": -0.09090909090909091,
+    "ema9_above_ema30": -0.09090909090909091,
+    "ema_spread_accelerating": 0.09090909090909091,
+    "macd_above_signal": -0.09090909090909091,
+    "macd_above_zero": -0.09090909090909091,
+    "signal_above_zero": -0.09090909090909091,
+    "macd_positive_hist": -0.09090909090909091,
+    "volume_above_average": -0.09090909090909091,
+    "volume_ratio": -0.09090909090909091,
+    "ha_uptrend": -0.09090909090909091
+  },
+  "sell_model": {
+    "price_above_ema9": -0.09090909090909091,
+    "price_above_ema30": -0.09090909090909091,
+    "ema9_above_ema30": -0.09090909090909091,
+    "ema_spread_accelerating": -0.09090909090909091,
+    "macd_above_signal": -0.09090909090909091,
+    "macd_above_zero": -0.09090909090909091,
+    "signal_above_zero": -0.09090909090909091,
+    "macd_positive_hist": -0.09090909090909091,
+    "volume_above_average": 0.09090909090909091,
+    "volume_ratio": 0.09090909090909091,
+    "ha_uptrend": -0.09090909090909091
+  }
+}

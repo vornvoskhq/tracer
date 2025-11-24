@@ -1,0 +1,97 @@
+name: equal_weight_dual_enhanced_mixed
+description: Enhanced equal-weight model trained on mixed bull/bear periods for robust performance
+
+# Extended training period covering both bull and bear markets
+start_date: "2020-01-01"  # Start of bull market
+end_date: "2024-12-01"    # Include bear market (2022) and recovery (2023-2024)
+
+# Core experiment settings
+buy_threshold: 0.02
+sell_threshold: 0.02
+forecast_horizon: 5
+confidence_threshold: 0.3
+
+# Universe - more diverse symbol set including individual stocks
+universe:
+  symbols: 
+    # Major ETFs (broad market representation)
+    - SPY   # S&P 500
+    - QQQ   # NASDAQ 100  
+    - DIA   # Dow Jones
+    - IWM   # Russell 2000
+    # Individual stocks - mix of sectors and market caps
+    - AAPL  # Large cap tech
+    - MSFT  # Large cap tech
+    - GOOGL # Large cap tech
+    - TSLA  # Growth/volatile
+    - JPM   # Financial
+    - JNJ   # Healthcare/defensive
+    - XOM   # Energy/cyclical
+    - KO    # Consumer staples/defensive
+    - PFE   # Healthcare/pharma
+    - WMT   # Consumer staples/retail
+    - BAC   # Financial/banking
+    - DIS   # Consumer discretionary/entertainment
+    # Sector ETFs for additional diversity
+    - XLF   # Financial sector
+    - XLV   # Healthcare sector  
+    - XLE   # Energy sector
+    - XLK   # Technology sector
+
+# Features - same as enhanced model
+features:
+  enabled:
+    # Core technical indicators (original 8)
+    - price_above_ema9
+    - price_above_ema30
+    - ema9_above_ema30
+    - macd_above_signal
+    - macd_above_zero
+    - signal_above_zero
+    - macd_positive_hist
+    - ha_uptrend
+    # Market structure features (enhanced - cleaned up)
+    - above_resistance
+    - higher_highs_higher_lows
+    - breakout_confirmed
+
+# Model configuration - equal weight with mixed period awareness
+model:
+  type: equal_weight
+  
+  # Equal weight specific settings - TRUE equal weight (like original)
+  ew_correlation_signs: false    # No correlation learning - pure signal counting
+  ew_activation_threshold: 0.0   # Binary activation (>0) 
+  ew_temperature: 1.0           # No smoothing - direct fraction
+  ew_calibrate_prior: false     # No bias adjustment - pure counting
+  
+  # Buy model settings
+  ew_buy_aggregation: fraction   # Fraction of activated features
+  
+  # Sell model settings  
+  ew_sell_aggregation: any_deactivated  # Different logic for sell signals
+
+# Backtest settings
+backtest:
+  confidence_threshold: 0.3      # 30% confidence threshold for signals
+  hysteresis_margin: 0.05        # Reduce signal noise
+  
+  # Position sizing
+  initial_capital: 100000
+  max_position_size: 0.1         # 10% max per position
+  
+  # Risk management
+  stop_loss: 0.05               # 5% stop loss
+  take_profit: 0.10             # 10% take profit
+
+# Model training settings
+training:
+  # Validation split - use time-based split for financial data
+  validation_split: 0.2
+  validation_method: "time_split"  # Last 20% of time period for validation
+  
+  # Feature selection
+  feature_selection: false       # Use all enabled features
+  
+  # Cross validation - disabled for time series
+  cross_validation: false

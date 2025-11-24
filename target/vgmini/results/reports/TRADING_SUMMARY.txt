@@ -1,0 +1,85 @@
+================================================================================
+VGMini Trading Analysis Summary
+================================================================================
+Generated: 2025-11-13 13:27:45
+Symbols Analyzed: 20
+Orders Ready: 20
+
+PIPELINE ANALYSIS
+================================================================================
+
+Model Performance:
+  • Model Type: equal_weight_dual_enhanced
+  • Symbols in Database: 696
+  • Symbols Processed: 696
+  • Successful Predictions: 621
+  • Buy Signals Flagged: 0
+
+  • Prediction Success Rate: 89.2%
+
+Decorrelation Analysis:
+  • Original Buy Signals: 0
+  • After Decorrelation: 20
+  • Cluster Metrics Available: ✓ (ER, CM, Stab columns)
+
+TRADING CANDIDATES
+================================================================================
+
+Rank Symbol   Score    Entry    Stop     Target   Risk   R:R    ATR    Trend  ER     CM     Stab  
+----------------------------------------------------------------------------------------------------
+1    DBC      57.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  1.000  0.698 
+2    AIZ      28.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.873  0.638 
+3    INBX     35.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.837  0.608 
+4    GM       15.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.800  0.596 
+5    PHG      48.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.719  0.564 
+6    YUMC     23.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.692  0.532 
+7    SEDG     31.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.675  0.525 
+8    PDD      38.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.662  0.531 
+9    KO       39.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.624  0.508 
+10   PTCT     37.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.610  0.497 
+11   CHRW     44.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.243  0.975  0.701 
+12   RIVN     36.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.601  0.488 
+13   MAR      4.000    N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.558  0.464 
+14   APH      21.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.546  0.461 
+15   NET      58.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.533  0.329 
+16   JPM      19.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.466  0.425 
+17   PH       53.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.463  0.428 
+18   ISRG     22.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.432  0.406 
+19   STT      11.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.427  0.405 
+20   HTHT     43.000   N/A      N/A      N/A      N/A    N/A    N/A    ✗      0.272  0.413  0.402 
+
+RISK ANALYSIS
+================================================================================
+
+Total Portfolio Risk (if all executed): $0.00
+Symbols with Positive Trend: 0/20 (0.0%)
+Best R:R Ratio: N/A
+Worst R:R Ratio: N/A
+
+EXECUTION NOTES
+================================================================================
+
+⚠️  SAFETY REMINDER:
+• Review individual charts before executing ANY orders
+• Consider executing only 1-3 best setups, not all at once
+• Verify current market conditions and news
+• Ensure proper position sizing for your account
+
+📁 FILES GENERATED:
+• Charts: /home/vorn/mithra/integrate/vgmini/results/reports/*_FULL.png (with price level overlays)
+• Charts: /home/vorn/mithra/integrate/vgmini/results/reports/*_CROSS.png (crossover analysis)
+• Summary: /home/vorn/mithra/integrate/vgmini/results/reports/TRADING_SUMMARY.txt (this file)
+• Orderer Data: /home/vorn/mithra/integrate/vgmini/results/trailstop/orderer_orders_2025-10-15.json
+• Full Analysis: /home/vorn/mithra/integrate/vgmini/results/trailstop/trailstop_2025-10-15.json
+• Decorrelate Data: /home/vorn/mithra/integrate/vgmini/results/decorrelated/equal_weight_dual.json
+
+🚀 TO EXECUTE ORDERS:
+1. Review individual charts and analysis above
+2. Select 1-3 best setups (DO NOT execute all)
+3. Run orderer in dry-run mode first:
+   cd orderer
+   python orderer_vgmini.py /home/vorn/mithra/integrate/vgmini/results/trailstop/orderer_orders_2025-10-15.json
+4. If satisfied, execute selected orders:
+   python orderer_vgmini.py /home/vorn/mithra/integrate/vgmini/results/trailstop/orderer_orders_2025-10-15.json --live --max-position 1000
+
+================================================================================

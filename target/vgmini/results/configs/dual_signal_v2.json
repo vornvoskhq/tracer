@@ -1,0 +1,86 @@
+{
+  "name": "dual_signal_v2",
+  "description": "Dual logistic regression model without RSI features - testing impact of RSI removal on performance",
+  "symbols": [
+    "SPY",
+    "QQQ"
+  ],
+  "start_date": "2023-01-01",
+  "end_date": "2024-01-01",
+  "buy_threshold": 0.02,
+  "sell_threshold": 0.02,
+  "forecast_horizon": 5,
+  "confidence_threshold": 0.65,
+  "ema_periods": [
+    9,
+    21,
+    50
+  ],
+  "volume_window": 20,
+  "test_size": 0.2,
+  "class_weight": "balanced",
+  "penalty": "l1",
+  "solver": "liblinear",
+  "initial_capital": 100000.0,
+  "commission": 0.001,
+  "max_position_size": 0.1,
+  
+  "technical_indicators": {
+    "rsi": {
+      "period": 14,
+      "oversold_threshold": 30,
+      "overbought_threshold": 70
+    },
+    "macd": {
+      "fast_period": 12,
+      "slow_period": 26,
+      "signal_period": 9
+    },
+    "bollinger_bands": {
+      "period": 20,
+      "std_dev": 2
+    },
+    "momentum": {
+      "window": 5,
+      "std_window": 20,
+      "std_multiplier": 1.5
+    },
+    "roc_periods": [5, 10],
+    "volume_roc_periods": [5]
+  },
+  
+  "enabled_features": [
+    "price_above_ema9",
+    "price_above_ema30", 
+    "price_momentum_strong",
+    "ema9_above_ema30",
+    "ema_spread_accelerating",
+    "macd_above_signal",
+    "macd_above_zero",
+    "signal_above_zero",
+    "macd_positive_hist",
+    "volume_above_average",
+    "volume_ratio",
+    "ha_uptrend",
+    "price_roc_5",
+    "price_roc_10",
+    "volume_roc_5",
+    "ema_separation_accel",
+    "price_ema_separation_accel"
+  ],
+  
+  "analysis": {
+    "interpretability_sample_size": 1000,
+    "lime_sample_size": 100,
+    "lime_max_samples": 100,
+    "min_valid_target_ratio": 0.8,
+    "max_correlation_threshold": 0.95,
+    "rolling_sharpe_window": 60,
+    "trading_days_per_year": 252
+  },
+  
+  "visualization": {
+    "dpi": 300,
+    "figure_size": [12, 8]
+  }
+}

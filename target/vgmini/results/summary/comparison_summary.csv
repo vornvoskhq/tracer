@@ -1,0 +1,7 @@
+metric,equal_weight_dual,equal_weight_dual_enhanced,best
+total_return,0.004936030430000014,0.0032165867700000815,equal_weight_dual
+sharpe_ratio,1.1694753104578255,1.3014139262762323,equal_weight_dual_enhanced
+max_drawdown,-0.002915162348352187,-0.0014506498953485239,equal_weight_dual_enhanced
+volatility,0.0040413923700955,0.002467118780901977,equal_weight_dual_enhanced
+total_trades,28,32,equal_weight_dual_enhanced
+win_rate,0.44666666666666666,0.45999999999999996,equal_weight_dual_enhanced

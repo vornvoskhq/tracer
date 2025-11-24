@@ -1,0 +1,29 @@
+# YAML experiment: logistic_buy_only
+name: logistic_buy_only
+description: Logistic Regression buy-only strategy
+
+universe:
+  symbols: [SPY, QQQ]
+
+features:
+  enabled:
+    - price_above_ema9
+    - price_above_ema30
+    - ema9_above_ema30
+    - ema_spread_accelerating
+    - macd_above_signal
+    - macd_above_zero
+    - macd_positive_hist
+    - volume_above_average
+    - volume_ratio
+    - ha_uptrend
+
+model:
+  type: logistic
+  penalty: l1
+  solver: liblinear
+  max_iter: 1000
+
+# Target strategy at top-level (overrides model default)
+target_strategy: buy_only
+

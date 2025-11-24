@@ -1,0 +1,90 @@
+name: logistic_buy_only
+description: Logistic Regression buy-only strategy
+symbols:
+- SPY
+- QQQ
+start_date: '2023-01-01'
+end_date: '2024-01-01'
+buy_threshold: 0.02
+sell_threshold: 0.02
+forecast_horizon: 5
+confidence_threshold: 0.6
+ema_periods:
+- 9
+- 21
+- 50
+volume_window: 20
+test_size: 0.2
+class_weight: balanced
+penalty: l1
+solver: liblinear
+max_iter: 1000
+tol: 0.0001
+model_type: logistic
+target_strategy: buy_only
+ew_correlation_signs: true
+ew_calibrate_prior: true
+ew_activation_threshold: 0.0
+ew_temperature: 0.75
+ew_buy_aggregation: fraction
+ew_sell_aggregation: any_deactivated
+initial_capital: 100000.0
+commission: 0.001
+slippage: 0.0005
+max_position_size: 0.1
+threshold_strategy: absolute
+threshold_percentile: 0.7
+threshold_window: 60
+auto_threshold_fallback: true
+fallback_percentile: 0.7
+fallback_window: 60
+buy_consecutive_days: 1
+sell_consecutive_days: 1
+hysteresis_margin: 0.0
+trade_cooldown_days: 0
+min_holding_days: 0
+technical_indicators:
+  rsi:
+    period: 14
+    oversold_threshold: 30
+    overbought_threshold: 70
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+  bollinger_bands:
+    period: 20
+    std_dev: 2
+  momentum:
+    window: 5
+    std_window: 20
+    std_multiplier: 1.5
+  roc_periods:
+  - 5
+  - 10
+  volume_roc_periods:
+  - 5
+enabled_features:
+- price_above_ema9
+- price_above_ema30
+- ema9_above_ema30
+- ema_spread_accelerating
+- macd_above_signal
+- macd_above_zero
+- macd_positive_hist
+- volume_above_average
+- volume_ratio
+- ha_uptrend
+analysis:
+  interpretability_sample_size: 1000
+  lime_sample_size: 100
+  lime_max_samples: 100
+  min_valid_target_ratio: 0.8
+  max_correlation_threshold: 0.95
+  rolling_sharpe_window: 60
+  trading_days_per_year: 252
+visualization:
+  dpi: 300
+  figure_size:
+  - 12
+  - 8

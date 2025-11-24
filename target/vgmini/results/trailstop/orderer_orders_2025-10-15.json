@@ -1,0 +1,370 @@
+{
+  "metadata": {
+    "generated_at": "2025-10-16T15:04:35.766688",
+    "source": "vgmini_trailstop",
+    "description": "Orders generated from vgmini trailing stop analysis"
+  },
+  "orders": [
+    {
+      "symbol": "CLNE",
+      "quantity": 1,
+      "trail_amount": 0.31,
+      "stop_offset": 0.31,
+      "metadata": {
+        "entry_price": 2.92,
+        "stop_loss_price": 2.6092,
+        "take_profit_price": 3.3862,
+        "stop_loss_pct": 10.644,
+        "take_profit_pct": 15.966,
+        "atr": 0.1554,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 0.31
+      }
+    },
+    {
+      "symbol": "GLD",
+      "quantity": 1,
+      "trail_amount": 11.63,
+      "stop_offset": 11.63,
+      "metadata": {
+        "entry_price": 387.39,
+        "stop_loss_price": 375.7596,
+        "take_profit_price": 404.8356,
+        "stop_loss_pct": 3.002,
+        "take_profit_pct": 4.503,
+        "atr": 5.8152,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 11.63
+      }
+    },
+    {
+      "symbol": "WEC",
+      "quantity": 1,
+      "trail_amount": 3.2,
+      "stop_offset": 3.2,
+      "metadata": {
+        "entry_price": 117.28,
+        "stop_loss_price": 114.0777,
+        "take_profit_price": 122.0835,
+        "stop_loss_pct": 2.73,
+        "take_profit_pct": 4.096,
+        "atr": 1.6012,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 3.2
+      }
+    },
+    {
+      "symbol": "AMD",
+      "quantity": 1,
+      "trail_amount": 29.23,
+      "stop_offset": 29.23,
+      "metadata": {
+        "entry_price": 238.6,
+        "stop_loss_price": 209.3652,
+        "take_profit_price": 282.4522,
+        "stop_loss_pct": 12.253,
+        "take_profit_pct": 18.379,
+        "atr": 14.6174,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 29.23
+      }
+    },
+    {
+      "symbol": "EDU",
+      "quantity": 1,
+      "trail_amount": 4.09,
+      "stop_offset": 4.09,
+      "metadata": {
+        "entry_price": 58.43,
+        "stop_loss_price": 54.3352,
+        "take_profit_price": 64.5723,
+        "stop_loss_pct": 7.008,
+        "take_profit_pct": 10.512,
+        "atr": 2.0474,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 4.09
+      }
+    },
+    {
+      "symbol": "POWL",
+      "quantity": 1,
+      "trail_amount": 32.4,
+      "stop_offset": 32.4,
+      "metadata": {
+        "entry_price": 329.76,
+        "stop_loss_price": 297.3647,
+        "take_profit_price": 378.3529,
+        "stop_loss_pct": 9.824,
+        "take_profit_pct": 14.736,
+        "atr": 16.1976,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 32.4
+      }
+    },
+    {
+      "symbol": "SLV",
+      "quantity": 1,
+      "trail_amount": 2.97,
+      "stop_offset": 2.97,
+      "metadata": {
+        "entry_price": 48.33,
+        "stop_loss_price": 45.3636,
+        "take_profit_price": 52.7797,
+        "stop_loss_pct": 6.138,
+        "take_profit_pct": 9.207,
+        "atr": 1.4832,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 2.97
+      }
+    },
+    {
+      "symbol": "RUN",
+      "quantity": 1,
+      "trail_amount": 2.85,
+      "stop_offset": 2.85,
+      "metadata": {
+        "entry_price": 21.29,
+        "stop_loss_price": 18.4404,
+        "take_profit_price": 25.5645,
+        "stop_loss_pct": 13.385,
+        "take_profit_pct": 20.077,
+        "atr": 1.4248,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 2.85
+      }
+    },
+    {
+      "symbol": "CVS",
+      "quantity": 1,
+      "trail_amount": 3.7,
+      "stop_offset": 3.7,
+      "metadata": {
+        "entry_price": 80.67,
+        "stop_loss_price": 76.9734,
+        "take_profit_price": 86.2149,
+        "stop_loss_pct": 4.582,
+        "take_profit_pct": 6.874,
+        "atr": 1.8483,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 3.7
+      }
+    },
+    {
+      "symbol": "PHAT",
+      "quantity": 1,
+      "trail_amount": 2.11,
+      "stop_offset": 2.11,
+      "metadata": {
+        "entry_price": 13.45,
+        "stop_loss_price": 11.3417,
+        "take_profit_price": 16.6124,
+        "stop_loss_pct": 15.675,
+        "take_profit_pct": 23.512,
+        "atr": 1.0541,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 2.11
+      }
+    },
+    {
+      "symbol": "RKLB",
+      "quantity": 1,
+      "trail_amount": 9.7,
+      "stop_offset": 9.7,
+      "metadata": {
+        "entry_price": 69.27,
+        "stop_loss_price": 59.571,
+        "take_profit_price": 83.8185,
+        "stop_loss_pct": 14.002,
+        "take_profit_pct": 21.003,
+        "atr": 4.8495,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 9.7
+      }
+    },
+    {
+      "symbol": "QS",
+      "quantity": 1,
+      "trail_amount": 3.65,
+      "stop_offset": 3.65,
+      "metadata": {
+        "entry_price": 17.85,
+        "stop_loss_price": 14.1999,
+        "take_profit_price": 23.3252,
+        "stop_loss_pct": 20.449,
+        "take_profit_pct": 30.673,
+        "atr": 1.8251,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 3.65
+      }
+    },
+    {
+      "symbol": "EL",
+      "quantity": 1,
+      "trail_amount": 7.92,
+      "stop_offset": 7.92,
+      "metadata": {
+        "entry_price": 95.27,
+        "stop_loss_price": 87.3509,
+        "take_profit_price": 107.1487,
+        "stop_loss_pct": 8.312,
+        "take_profit_pct": 12.468,
+        "atr": 3.9596,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 7.92
+      }
+    },
+    {
+      "symbol": "ALNY",
+      "quantity": 1,
+      "trail_amount": 27.58,
+      "stop_offset": 27.58,
+      "metadata": {
+        "entry_price": 470.27,
+        "stop_loss_price": 442.6936,
+        "take_profit_price": 511.6345,
+        "stop_loss_pct": 5.864,
+        "take_profit_pct": 8.796,
+        "atr": 13.7882,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 27.58
+      }
+    },
+    {
+      "symbol": "ADM",
+      "quantity": 1,
+      "trail_amount": 4.01,
+      "stop_offset": 4.01,
+      "metadata": {
+        "entry_price": 63.38,
+        "stop_loss_price": 59.3747,
+        "take_profit_price": 69.3879,
+        "stop_loss_pct": 6.319,
+        "take_profit_pct": 9.479,
+        "atr": 2.0026,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 4.01
+      }
+    },
+    {
+      "symbol": "EQIX",
+      "quantity": 1,
+      "trail_amount": 29.01,
+      "stop_offset": 29.01,
+      "metadata": {
+        "entry_price": 822.24,
+        "stop_loss_price": 793.2277,
+        "take_profit_price": 865.7584,
+        "stop_loss_pct": 3.528,
+        "take_profit_pct": 5.293,
+        "atr": 14.5061,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 29.01
+      }
+    },
+    {
+      "symbol": "VTWO",
+      "quantity": 1,
+      "trail_amount": 3.49,
+      "stop_offset": 3.49,
+      "metadata": {
+        "entry_price": 101.21,
+        "stop_loss_price": 97.7207,
+        "take_profit_price": 106.4439,
+        "stop_loss_pct": 3.448,
+        "take_profit_pct": 5.171,
+        "atr": 1.7446,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 3.49
+      }
+    },
+    {
+      "symbol": "TSM",
+      "quantity": 1,
+      "trail_amount": 23.49,
+      "stop_offset": 23.49,
+      "metadata": {
+        "entry_price": 304.71,
+        "stop_loss_price": 281.2243,
+        "take_profit_price": 339.9385,
+        "stop_loss_pct": 7.708,
+        "take_profit_pct": 11.561,
+        "atr": 11.7428,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 23.49
+      }
+    },
+    {
+      "symbol": "NTLA",
+      "quantity": 1,
+      "trail_amount": 4.22,
+      "stop_offset": 4.22,
+      "metadata": {
+        "entry_price": 25.93,
+        "stop_loss_price": 21.7118,
+        "take_profit_price": 32.2574,
+        "stop_loss_pct": 16.268,
+        "take_profit_pct": 24.402,
+        "atr": 2.1091,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 4.22
+      }
+    },
+    {
+      "symbol": "K",
+      "quantity": 1,
+      "trail_amount": 1.25,
+      "stop_offset": 1.25,
+      "metadata": {
+        "entry_price": 82.79,
+        "stop_loss_price": 81.5421,
+        "take_profit_price": 84.6618,
+        "stop_loss_pct": 1.507,
+        "take_profit_pct": 2.261,
+        "atr": 0.6239,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-10-15",
+        "risk_per_share": 1.25
+      }
+    }
+  ],
+  "total_orders": 20
+}

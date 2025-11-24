@@ -1,0 +1,94 @@
+My Recommendation for Your Mapping App
+Start with this stack:
+
+Create your own SPL token
+
+Name it something related to your app (e.g., "GeoToken", "MapCoin")
+Initial supply: 1 billion tokens
+Allocate: 60% mining rewards, 20% team, 10% marketing, 10% reserve
+
+
+Use non-custodial wallet integration
+
+Let users connect Phantom/Solflare
+Simpler compliance
+More trustworthy for users
+
+
+Optional: Add custodial option
+
+For users without wallets
+Store in your treasury
+Allow "claim to wallet" later
+
+
+
+Step-by-Step Implementation Plan
+Phase 1: Create Token (1-2 days)
+bash# Install Solana CLI
+sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+
+# Create token
+spl-token create-token
+
+# Create token account
+spl-token create-account <TOKEN_ADDRESS>
+
+# Mint initial supply
+spl-token mint <TOKEN_ADDRESS> 1000000000
+Or use Python:
+pythonfrom solana.rpc.api import Client
+from spl.token.instructions import create_mint, mint_to
+from solana.keypair import Keypair
+
+# Create mint authority (save this securely!)
+mint_authority = Keypair()
+
+# Connect to devnet first for testing
+client = Client("https://api.devnet.solana.com")
+Phase 2: Wallet Integration (3-5 days)
+Frontend (if you have web interface):
+javascript// Use @solana/wallet-adapter
+// Users click "Connect Wallet"
+// Get their public key
+// Send to your backend
+Backend receives:
+python# User connects wallet, you store:
+{
+    "user_id": 123,
+    "solana_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+    "connected_at": "2025-10-31T10:00:00Z"
+}
+Phase 3: Treasury & Distribution (2-3 days)
+pythonclass TokenTreasury:
+    def __init__(self):
+        self.treasury_keypair = self.load_secure_keypair()
+        self.client = Client("https://api.mainnet-beta.solana.com")
+        
+    def send_reward(self, recipient_address: str, amount: float):
+        # Transfer tokens from treasury to user
+        # Use solana-py to create and send transaction
+        pass
+Critical Decisions Checklist
+
+ Token Supply: How many tokens total? (Recommend: 100M - 10B)
+ Token Distribution: What % for mining vs team vs other?
+ Wallet Type: Non-custodial (easier) or custodial (more control)?
+ Network: Start on devnet, then mainnet-beta
+ Token Metadata: Name, symbol, logo (use Metaplex for this)
+ Decimal Places: Usually 9 (like SOL) or 6 (like USDC)
+
+Quick Start Recommendation
+For fastest MVP (2-3 weeks):
+
+Create SPL token on devnet first
+Use non-custodial wallet connection (Phantom integration)
+Build simple reward API that transfers from your treasury
+Test with small group
+Move to mainnet once validated
+
+Would you like me to create a complete code artifact showing either:
+
+Token creation script (Python/CLI)
+Wallet integration backend (FastAPI example)
+Treasury management system

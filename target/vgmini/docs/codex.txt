@@ -1,0 +1,25 @@
+# Price vs Moving Averages
+price_above_ema9 = low > ema_9
+price_above_ema30 = low > ema_30
+ema9_above_ema30 = ema_9 > ema_30
+
+# MACD Crossovers
+macd_above_signal = macd > macd_signal
+macd_above_zero = macd > 0
+signal_above_zero = macd_signal > 0
+macd_positive_hist = macd_hist > 0
+
+# Heikin-Ashi Trend
+ha_uptrend = ha_close > ha_open
+
+
+ema9_above_ema30
+price_above_ema9
+price_momentum_strong
+ema_spread_accelerating
+volume_above_average
+macd_above_signal
+macd_positive_histogram
+macd_above_zero
+price_above_ema30
+heiken_ashi_uptrend

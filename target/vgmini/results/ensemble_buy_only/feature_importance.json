@@ -1,0 +1,28 @@
+{
+  "buy_model": {
+    "price_above_ema9": 0.0,
+    "price_above_ema30": 0.0,
+    "ema9_above_ema30": 0.0,
+    "ema_spread_accelerating": 0.0,
+    "macd_above_signal": 0.0,
+    "macd_above_zero": 0.0,
+    "signal_above_zero": 0.0,
+    "macd_positive_hist": 0.0,
+    "volume_above_average": 0.0,
+    "volume_ratio": 0.0,
+    "ha_uptrend": 0.0
+  },
+  "sell_model": {
+    "price_above_ema9": 0.0,
+    "price_above_ema30": 0.0,
+    "ema9_above_ema30": 0.0,
+    "ema_spread_accelerating": 0.0,
+    "macd_above_signal": 0.0,
+    "macd_above_zero": 0.0,
+    "signal_above_zero": 0.0,
+    "macd_positive_hist": 0.0,
+    "volume_above_average": 0.0,
+    "volume_ratio": 0.0,
+    "ha_uptrend": 0.0
+  }
+}

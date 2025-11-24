@@ -1,0 +1,4 @@
+# Named universe clusters for experiments (Sprint 3)
+clusters:
+  big_tech: [MSFT, GOOGL, META, TSLA]
+  mega_caps: [AAPL, MSFT, AMZN, GOOGL, NVDA]

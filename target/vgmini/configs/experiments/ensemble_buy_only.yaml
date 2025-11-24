@@ -1,0 +1,46 @@
+# YAML experiment: ensemble_buy_only
+name: ensemble_buy_only
+description: Simple averaging ensemble (logistic + xgboost) using buy-only targets
+
+universe:
+  symbols: [SPY, QQQ, DIA, IWM]
+
+features:
+  enabled:
+    - price_above_ema9
+    - price_above_ema30
+    - ema9_above_ema30
+    - ema_spread_accelerating
+    - macd_above_signal
+    - macd_above_zero
+    - signal_above_zero
+    - macd_positive_hist
+    - volume_above_average
+    - volume_ratio
+    - ha_uptrend
+
+model:
+  type: logistic  # base type for hyperparams fallback
+  target_strategy: buy_only
+  # ensemble definition
+  base_models: [logistic, xgboost]
+  weights: [0.5, 0.5]
+  # xgboost knobs used when present in base_models
+  n_estimators: 200
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  # training knobs
+  test_size: 0.2
+  class_weight: balanced
+  penalty: l1
+  solver: liblinear
+  max_iter: 1000
+  tol: 0.0001
+  ema_periods: [9, 21, 50]
+  volume_window: 20
+  forecast_horizon: 5
+  buy_threshold: 0.02
+  sell_threshold: 0.02
+

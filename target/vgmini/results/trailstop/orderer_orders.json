@@ -1,0 +1,173 @@
+{
+  "metadata": {
+    "source": "vgmini_trailstop",
+    "description": "Orders generated from vgmini trailing stop analysis",
+    "generated_date": "2025-11-12",
+    "generated_timestamp": "2025-11-15T13:20:22.302874"
+  },
+  "orders": [
+    {
+      "symbol": "XLE",
+      "quantity": 1,
+      "trail_amount": 2.79,
+      "stop_offset": 2.79,
+      "metadata": {
+        "entry_price": 90.25,
+        "stop_loss_price": 87.458,
+        "take_profit_price": 94.438,
+        "stop_loss_pct": 3.094,
+        "take_profit_pct": 4.64,
+        "atr": 1.396,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 2.79
+      }
+    },
+    {
+      "symbol": "EXPE",
+      "quantity": 1,
+      "trail_amount": 21.87,
+      "stop_offset": 21.87,
+      "metadata": {
+        "entry_price": 273.65,
+        "stop_loss_price": 251.7765,
+        "take_profit_price": 306.4603,
+        "stop_loss_pct": 7.993,
+        "take_profit_pct": 11.99,
+        "atr": 10.9368,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 21.87
+      }
+    },
+    {
+      "symbol": "AVY",
+      "quantity": 1,
+      "trail_amount": 6.85,
+      "stop_offset": 6.85,
+      "metadata": {
+        "entry_price": 174.01,
+        "stop_loss_price": 167.1617,
+        "take_profit_price": 184.2824,
+        "stop_loss_pct": 3.936,
+        "take_profit_pct": 5.903,
+        "atr": 3.4241,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 6.85
+      }
+    },
+    {
+      "symbol": "ZTO",
+      "quantity": 1,
+      "trail_amount": 0.8,
+      "stop_offset": 0.8,
+      "metadata": {
+        "entry_price": 19.36,
+        "stop_loss_price": 18.5636,
+        "take_profit_price": 20.5546,
+        "stop_loss_pct": 4.114,
+        "take_profit_pct": 6.171,
+        "atr": 0.3982,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 0.8
+      }
+    },
+    {
+      "symbol": "SLV",
+      "quantity": 1,
+      "trail_amount": 2.29,
+      "stop_offset": 2.29,
+      "metadata": {
+        "entry_price": 48.32,
+        "stop_loss_price": 46.0282,
+        "take_profit_price": 51.7577,
+        "stop_loss_pct": 4.743,
+        "take_profit_pct": 7.115,
+        "atr": 1.1459,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 2.29
+      }
+    },
+    {
+      "symbol": "NBIX",
+      "quantity": 1,
+      "trail_amount": 12.23,
+      "stop_offset": 12.23,
+      "metadata": {
+        "entry_price": 146.85,
+        "stop_loss_price": 134.6164,
+        "take_profit_price": 165.2004,
+        "stop_loss_pct": 8.331,
+        "take_profit_pct": 12.496,
+        "atr": 6.1168,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 12.23
+      }
+    },
+    {
+      "symbol": "LGND",
+      "quantity": 1,
+      "trail_amount": 15.59,
+      "stop_offset": 15.59,
+      "metadata": {
+        "entry_price": 205.61,
+        "stop_loss_price": 190.0164,
+        "take_profit_price": 229.0004,
+        "stop_loss_pct": 7.584,
+        "take_profit_pct": 11.376,
+        "atr": 7.7968,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 15.59
+      }
+    },
+    {
+      "symbol": "NOV",
+      "quantity": 1,
+      "trail_amount": 1.01,
+      "stop_offset": 1.01,
+      "metadata": {
+        "entry_price": 15.4,
+        "stop_loss_price": 14.3937,
+        "take_profit_price": 16.9094,
+        "stop_loss_pct": 6.534,
+        "take_profit_pct": 9.801,
+        "atr": 0.5031,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 1.01
+      }
+    },
+    {
+      "symbol": "TRP",
+      "quantity": 1,
+      "trail_amount": 1.87,
+      "stop_offset": 1.87,
+      "metadata": {
+        "entry_price": 54.77,
+        "stop_loss_price": 52.9004,
+        "take_profit_price": 57.5744,
+        "stop_loss_pct": 3.414,
+        "take_profit_pct": 5.12,
+        "atr": 0.9348,
+        "atr_period": 14,
+        "trend_positive": true,
+        "date": "2025-11-12",
+        "risk_per_share": 1.87
+      }
+    }
+  ],
+  "total_orders": 9
+}

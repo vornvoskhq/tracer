@@ -1,0 +1,31 @@
+# YAML experiment: xgboost_buy_only
+name: xgboost_buy_only
+description: XGBoost buy-only strategy
+
+universe:
+  symbols: [SPY, QQQ]
+
+features:
+  enabled:
+    - price_above_ema9
+    - price_above_ema30
+    - ema9_above_ema30
+    - ema_spread_accelerating
+    - macd_above_signal
+    - macd_above_zero
+    - macd_positive_hist
+    - volume_above_average
+    - volume_ratio
+    - ha_uptrend
+
+model:
+  type: xgboost
+  n_estimators: 200
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+
+# Target strategy at top-level (overrides model default)
+target_strategy: buy_only
+
