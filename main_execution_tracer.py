@@ -342,7 +342,7 @@ def main():
                 
                 # Track the access
                 access_type = "read" if 'r' in mode else "write" if 'w' in mode or 'a' in mode else "read"
-                TRACE_DATA["file_accesses"].append({
+                TRACE_DATA["file_accesses"].append({{
                     "file": rel_file,
                     "mode": mode,
                     "access_type": access_type,
@@ -350,7 +350,7 @@ def main():
                     "src_file": src_file,
                     "src_func": src_func,
                     "src_line": src_line,
-                })
+                }})
                 TRACE_DATA["files_opened"][rel_file] += 1
                 
                 print(f"📁 {access_type.upper()}: {rel_file} ({mode}) from {src_file}::{src_func}:{src_line}")
