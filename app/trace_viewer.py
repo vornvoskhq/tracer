@@ -286,10 +286,28 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
+
+        # Ensure the worker thread has fully finished before dropping our
+        # reference to it, to avoid the QThread being destroyed while it is
+        # still running.
+        worker = self._trace_worker
+        if worker is not None:
+            if worker.isRunning():
+                worker.wait()
+            worker.deleteLater()
         self._trace_worker = None
 
         # Populate tree with collapsible groups. Column layout:
         #   0: (indent / tree controls)
+        #   1: Order
+        #   2: Depth
+        #   3: Kind
+        #   4: File
+        #   5: Function
+        #   6: Line/Mode
+        root_execution = QtWidgets.QTreeWidgetItem(
+            self.left_tree, ["", "", "", "Exec", "Function Execution Order", "", ""]
+        )
         #   1: Order
         #   2: Depth
         #   3: Kind
@@ -346,21 +364,28 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
+
+        # Ensure the worker thread has fully finished before dropping our
+        # reference to it, to avoid the QThread being destroyed while it is
+        # still running.
+        worker = self._trace_worker
+        if worker is not None:
+            if worker.isRunning():
+                worker.wait()
+            worker.deleteLater()
         self._trace_worker = None
 
-        # Prefer console logging over GUI popups for trace errors
-        print(f"[TraceViewerWidget] Trace failed: {message}")
-
-    def _on_left_tree_context_menu(self, pos: QtCore.QPoint):
-        """
-        Show a context menu on the left tree with options such as copying the
-        tree to the clipboard and opening the full source file in the right pane.
-        """
-        item = self.left_tree.itemAt(pos)
-        payload = item.data(0, QtCore.Qt.UserRole) if item is not None else None
-
-        menu = QtWidgets.QMenu(self.left_tree)
-        copy_action = menu.addAction("Copy tree to clipboard")
+        # Populate tree with collapsible groups. Column layout:
+        #   0: (indent / tree controls)
+        #   1: Order
+        #   2: Depth
+        #   3: Kind
+        #   4: File
+        #   5: Function
+        #   6: Line/Mode
+        root_execution = QtWidgets.QTreeWidgetItem(
+            self.left_tree, ["", "", "", "Exec", "Function Execution Order", "", ""]
+        )
         open_file_action = None
         if payload:
             open_file_action = menu.addAction("Open full file in right pane")
