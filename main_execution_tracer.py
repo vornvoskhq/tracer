@@ -670,9 +670,9 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
         for access in filtered_accesses:
             access_ts = access.get("timestamp", 0.0)
             # Advance call_index while the call timestamp is <= access timestamp
-            while call_index + 1 &lt; n_calls and calls[call_index + 1].get("timestamp", 0.0) &lt;= access_ts:
+            while call_index + 1 < n_calls and calls[call_index + 1].get("timestamp", 0.0) <= access_ts:
                 call_index += 1
-            if n_calls &gt; 0:
+            if n_calls > 0:
                 caller = calls[call_index]
                 caller_info.append((
                     access,
