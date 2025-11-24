@@ -52,6 +52,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_toggle_phase_column
         )
 
+        self.action_toggle_import_rows = QtWidgets.QAction(
+            "Hide &Import-time Calls", self
+        )
+        self.action_toggle_import_rows.setCheckable(True)
+        self.action_toggle_import_rows.setChecked(False)
+        self.action_toggle_import_rows.toggled.connect(
+            self._on_toggle_import_rows
+        )
+
     def _create_menu(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self.action_open_codebase)
@@ -63,6 +72,7 @@ class MainWindow(QtWidgets.QMainWindow):
         config_menu = self.menuBar().addMenu("&Config")
         config_menu.addAction(self.action_toggle_caller_column)
         config_menu.addAction(self.action_toggle_phase_column)
+        config_menu.addAction(self.action_toggle_import_rows)
 
     # Slots ---------------------------------------------------------------
 
@@ -96,6 +106,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if hasattr(self.viewer, "set_phase_column_visible"):
             self.viewer.set_phase_column_visible(checked)
+
+    def _on_toggle_import_rows(self, checked: bool):
+        """
+        Hide or show import-time calls in the execution tree.
+        """
+        if hasattr(self.viewer, "set_import_rows_hidden"):
+            self.viewer.set_import_rows_hidden(checked)
 
     def closeEvent(self, event):
         """
