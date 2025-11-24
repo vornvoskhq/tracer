@@ -650,19 +650,16 @@ if __name__ == "__main__":
                 call_sequence=trace_data.get('sequence', []),
                 patches_applied=trace_data.get('patches_applied', []),
                 venv_used=self.target_python,
+                file_accesses=trace_data.get('file_accesses', []),
+                files_opened=trace_data.get('files_opened', {}),
                 error_output=error_output,
-                success=success
+                success=success,
+                calls=trace_data.get('calls', []),
             )
             
             # Add line number sequence if available
             if 'sequence_with_lines' in trace_data:
                 execution_trace.call_sequence_with_lines = trace_data['sequence_with_lines']
-                
-            # Add file access data if available
-            if 'file_accesses' in trace_data:
-                execution_trace.file_accesses = trace_data['file_accesses']
-            if 'files_opened' in trace_data:
-                execution_trace.files_opened = trace_data['files_opened']
         else:
             execution_trace = ExecutionTrace(
                 command=command,
@@ -678,8 +675,11 @@ if __name__ == "__main__":
                 call_sequence=[],
                 patches_applied=[],
                 venv_used=self.target_python,
+                file_accesses=[],
+                files_opened={},
                 error_output=error_output,
-                success=success
+                success=success,
+                calls=[],
             )
         
         return execution_trace

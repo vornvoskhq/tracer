@@ -142,8 +142,18 @@ class TraceViewerWidget(QtWidgets.QWidget):
         summary_layout.addWidget(self.summary_text, stretch=1)
         summary_layout.addWidget(self.summary_button, stretch=0)
 
-        # Right side: code editor
-        self.editor = CodeEditor(main_splitter)
+        # Right side: container with label + code editor
+        right_container = QtWidgets.QWidget(main_splitter)
+        right_layout = QtWidgets.QVBoxLayout(right_container)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+        right_layout.setSpacing(4)
+
+        self.editor_label = QtWidgets.QLabel("File: (none)", right_container)
+        self.editor_label.setStyleSheet("font-weight: bold;")
+        right_layout.addWidget(self.editor_label, stretch=0)
+
+        self.editor = CodeEditor(right_container)
+        right_layout.addWidget(self.editor, stretch=1)
 
         # Adjust splitter sizes: make summary vertically smaller
         main_splitter.setStretchFactor(0, 0)
@@ -202,6 +212,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.clear()
         self.editor.set_code("")
+        if hasattr(self, "editor_label"):
+            self.editor_label.setText("File: (none)")
         self.summary_text.clear()
 
         self.left_tree.setDisabled(True)
@@ -291,35 +303,94 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return
 
         kind, obj = payload
-        if kind != "func":
-            return
-
-        call: FunctionCallView = obj
         if self._current_codebase is None:
             return
 
-        file_path = (self._current_codebase / call.file).resolve()
-        if not file_path.exists():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "File Not Found",
-                f"Could not locate file:\n{file_path}",
+        # Handle function execution entries
+        if kind == "func":
+            call: FunctionCallView = obj
+            file_path = (self._current_codebase / call.file).resolve()
+            if not file_path.exists():
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "File Not Found",
+                    f"Could not locate file:\n{file_path}",
+                )
+                return
+
+            func_loc = find_enclosing_function(
+                file_path=file_path, line_number=call.line, function_name=call.function
             )
+            if not func_loc:
+                # Fallback: show a reasonable window around the clicked line
+                start_line = max(call.line - 5, 1)
+                end_line = call.line + 40
+                code = extract_source_segment(file_path, start_line, end_line)
+                self.editor.set_code(code)
+            else:
+                code = extract_source_segment(
+                    func_loc.file_path, func_loc.start_line, func_loc.end_line
+                )
+                self.editor.set_code(code)
+
+            if hasattr(self, "editor_label"):
+                # Show the source file being displayed
+                rel_path = file_path
+                try:
+                    rel_path = file_path.relative_to(self._current_codebase)
+                except ValueError:
+                    pass
+                self.editor_label.setText(f"File: {rel_path}")
             return
 
-        func_loc = find_enclosing_function(
-            file_path=file_path, line_number=call.line, function_name=call.function
-        )
-        if not func_loc:
-            # Fallback: show from the clicked line forward
-            code = extract_source_segment(file_path, call.line, call.line + 80)
-            self.editor.set_code(code)
-            return
+        # Handle external I/O entries
+        if kind == "io":
+            fa: FileAccessView = obj
+            src_file = fa.src_file
+            src_line = fa.src_line
+            src_func = fa.src_func
 
-        code = extract_source_segment(
-            func_loc.file_path, func_loc.start_line, func_loc.end_line
-        )
-        self.editor.set_code(code)
+            if not src_file:
+                return
+
+            file_path = (self._current_codebase / src_file).resolve()
+            if not file_path.exists():
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "File Not Found",
+                    f"Could not locate file that performed I/O:\n{file_path}",
+                )
+                return
+
+            func_loc = None
+            if src_line:
+                func_loc = find_enclosing_function(
+                    file_path=file_path, line_number=src_line, function_name=src_func or None
+                )
+
+            if not func_loc and src_line:
+                # Fallback: show a window around the call site
+                start_line = max(src_line - 5, 1)
+                end_line = src_line + 40
+                code = extract_source_segment(file_path, start_line, end_line)
+                self.editor.set_code(code)
+            elif func_loc:
+                code = extract_source_segment(
+                    func_loc.file_path, func_loc.start_line, func_loc.end_line
+                )
+                self.editor.set_code(code)
+            else:
+                # If we have neither a function location nor a line, just show the top of the file
+                code = extract_source_segment(file_path, 1, 80)
+                self.editor.set_code(code)
+
+            if hasattr(self, "editor_label"):
+                try:
+                    rel_path = file_path.relative_to(self._current_codebase)
+                except ValueError:
+                    rel_path = file_path
+                self.editor_label.setText(f"File: {rel_path}")
+            return
 
     def _on_summarize_clicked(self):
         code = self.editor.text()
