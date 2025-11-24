@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Optional
 from collections import defaultdict, Counter
 from dataclasses import dataclass, asdict
+from string import Template
 
 
 @dataclass
@@ -132,14 +133,24 @@ class MainExecutionTracer:
     
     def create_main_execution_tracer(self, command_args: List[str]) -> str:
         """
-        Create a tracer that properly executes any codebase's main logic.
+        Create a tracer script that properly executes any codebase's main logic.
+
+        This version uses string.Template for substitution so that we can use
+        normal Python dictionaries and formatting inside the generated script
+        without fighting f-string brace escaping.
         """
-        # Get values that need to be inserted into the script
         target_dir_str = str(self.target_dir)
         codebase_name = self.codebase_name
         entry_point = self.entry_point
-        
-        script = f'''
+
+        # Escape backslashes for safe use inside quoted strings in the script
+        target_dir_escaped = target_dir_str.replace("\\", "\\\\")
+
+        # Represent command_args as a Python list literal
+        command_args_repr = repr(command_args)
+
+        template = Template(
+            """
 import os
 import sys
 import json
@@ -147,17 +158,17 @@ import time
 from collections import Counter
 
 # Change to target directory
-os.chdir("{target_dir_str}")
-sys.path.insert(0, "{target_dir_str}")
+os.chdir("$TARGET_DIR")
+sys.path.insert(0, "$TARGET_DIR")
 
-print("🚀 {codebase_name.title()} Execution Tracer")
-print(f"Python: {{sys.executable}}")
-print(f"Entry Point: {entry_point}")
-print(f"Args: {command_args}")
+print("🚀 $CODEBASE_TITLE Execution Tracer")
+print(f"Python: {sys.executable}")
+print("Entry Point: $ENTRY_POINT")
+print(f"Args: $COMMAND_ARGS")
 print("=" * 60)
 
 # Global trace storage
-TRACE_DATA = {{
+TRACE_DATA = {
     "start_time": time.time(),
     "calls": [],
     "functions": Counter(),
@@ -166,23 +177,23 @@ TRACE_DATA = {{
     "patches_applied": [],
     "current_depth": 0,
     "file_accesses": [],
-    "files_opened": Counter()
-}}
+    "files_opened": Counter(),
+}
 
 def should_trace(filename, function_name):
-    """Determine if we should trace this call."""
+    \"\"\"Determine if we should trace this call.\"\"\"
     if not filename:
         return False
-    
+
     # Trace only codebase-specific files (not standard library)
     trace_patterns = [
-        "{codebase_name.lower()}", "src/", "/src/"
+        "$CODEBASE_NAME_LOWER", "src/", "/src/"
     ]
-    
+
     # Must be a Python file
     if not filename.endswith(".py"):
         return False
-    
+
     # Skip standard library and external packages
     skip_patterns = [
         "__pycache__", "site-packages", "/lib/python", "/logging/", "/warnings/",
@@ -191,61 +202,61 @@ def should_trace(filename, function_name):
     for skip in skip_patterns:
         if skip in filename:
             return False
-    
+
     # Only trace files that match our codebase patterns
     for pattern in trace_patterns:
         if pattern in filename.lower():
             # Skip some very noisy functions
-            skip_functions = {{"__enter__", "__exit__", "__del__", "__getattribute__", "__setattr__"}}
+            skip_functions = {"__enter__", "__exit__", "__del__", "__getattribute__", "__setattr__"}
             if function_name in skip_functions:
                 return False
             return True
-    
+
     # Also trace files in the target directory (absolute path check)
-    if "{target_dir_str}" in filename:
-        skip_functions = {{"__enter__", "__exit__", "__del__", "__getattribute__", "__setattr__"}}
+    if "$TARGET_DIR" in filename:
+        skip_functions = {"__enter__", "__exit__", "__del__", "__getattribute__", "__setattr__"}
         if function_name in skip_functions:
             return False
         return True
-    
+
     return False
 
 def trace_calls(frame, event, arg):
-    """Main trace function."""
+    \"\"\"Main trace function.\"\"\"
     global TRACE_DATA
-    
+
     if event not in ('call', 'return'):
         return trace_calls
-    
+
     filename = frame.f_code.co_filename
     function_name = frame.f_code.co_name
     line_no = frame.f_lineno
-    
+
     # Depth tracking
     if event == 'call':
         TRACE_DATA["current_depth"] += 1
     elif event == 'return':
         TRACE_DATA["current_depth"] -= 1
         return trace_calls
-    
+
     # Limit depth
     if TRACE_DATA["current_depth"] > 50:
         TRACE_DATA["current_depth"] -= 1
         return trace_calls
-    
+
     # Only trace relevant files
     if not should_trace(filename, function_name):
         return trace_calls
-    
+
     try:
         # Get clean relative path (dynamic based on codebase)
         rel_path = filename
-        if "{target_dir_str}" in filename:
-            rel_path = filename.split("{target_dir_str}" + "/")[-1]
-        elif filename.endswith("{codebase_name}.py"):
-            rel_path = "{codebase_name}.py"
-        elif filename.endswith("{entry_point}"):
-            rel_path = "{entry_point}"
+        if "$TARGET_DIR" in filename:
+            rel_path = filename.split("$TARGET_DIR" + "/")[-1]
+        elif filename.endswith("$CODEBASE_NAME.py"):
+            rel_path = "$CODEBASE_NAME.py"
+        elif filename.endswith("$ENTRY_POINT"):
+            rel_path = "$ENTRY_POINT"
         elif "/src/" in filename:
             parts = filename.split("/src/")
             if len(parts) > 1:
@@ -254,75 +265,75 @@ def trace_calls(frame, event, arg):
             parts = filename.split("/lib/")
             if len(parts) > 1:
                 rel_path = "lib/" + parts[-1]
-        
-        func_key = f"{{rel_path}}::{{function_name}}"
-        
+
+        func_key = f"{rel_path}::{function_name}"
+
         # Update counters
         TRACE_DATA["functions"][func_key] += 1
         TRACE_DATA["files"][rel_path] += 1
         TRACE_DATA["sequence"].append(func_key)
-        
+
         # Store call details with line number
-        call_info = {{
+        call_info = {
             "function": function_name,
             "file": rel_path,
             "line": line_no,
             "timestamp": time.time() - TRACE_DATA["start_time"],
-            "depth": TRACE_DATA["current_depth"]
-        }}
+            "depth": TRACE_DATA["current_depth"],
+        }
         TRACE_DATA["calls"].append(call_info)
-        
+
         # Also store in sequence with line number for easy access
-        func_with_line = f"{{rel_path}}::{{function_name}}:{{line_no}}"
+        func_with_line = f"{rel_path}::{function_name}:{line_no}"
         TRACE_DATA["sequence_with_lines"] = TRACE_DATA.get("sequence_with_lines", [])
         TRACE_DATA["sequence_with_lines"].append(func_with_line)
-        
-    except Exception as e:
+
+    except Exception:
         pass
-    
+
     return trace_calls
 
 def save_trace_data(filename):
-    """Save trace data to file."""
+    \"\"\"Save trace data to file.\"\"\"
     try:
         TRACE_DATA["end_time"] = time.time()
         TRACE_DATA["duration"] = TRACE_DATA["end_time"] - TRACE_DATA["start_time"]
-        
+
         # Convert Counter objects for JSON serialization
         output_data = dict(TRACE_DATA)
         output_data["functions"] = dict(TRACE_DATA["functions"])
         output_data["files"] = dict(TRACE_DATA["files"])
         output_data["files_opened"] = dict(TRACE_DATA["files_opened"])
-        
+
         with open(filename, "w") as f:
             json.dump(output_data, f, indent=2, default=str)
-        
-        print(f"💾 Saved {{len(TRACE_DATA['calls'])}} traced calls and {{len(TRACE_DATA['file_accesses'])}} file accesses")
-        
+
+        print(f"💾 Saved {len(TRACE_DATA['calls'])} traced calls and {len(TRACE_DATA['file_accesses'])} file accesses")
+
     except Exception as e:
-        print(f"❌ Error saving trace: {{e}}")
+        print(f"❌ Error saving trace: {e}")
 
 # Main execution
 def main():
     try:
-        # Set up sys.argv for VGMini
-        sys.argv = ["vgmini.py"] + {command_args}
-        print(f"🎯 Setting sys.argv: {{sys.argv}}")
-        
+        # Set up sys.argv for target app
+        sys.argv = ["$ENTRY_POINT"] + $COMMAND_ARGS
+        print(f"🎯 Setting sys.argv: {sys.argv}")
+
         # Install tracer and file access hooks
         print("🔧 Installing tracer and file access monitoring...")
         sys.settrace(trace_calls)
 
         # Hook file operations to track file access
         original_open = open
-        
+
         def tracked_open(file, mode='r', *args, **kwargs):
-            """Wrapped open function to track file access."""
+            \"\"\"Wrapped open function to track file access.\"\"\"
             try:
                 # Get clean file path
                 file_str = str(file)
-                if "{target_dir_str}" in file_str:
-                    rel_file = file_str.replace("{target_dir_str}/", "")
+                if "$TARGET_DIR" in file_str:
+                    rel_file = file_str.replace("$TARGET_DIR" + "/", "")
                 else:
                     rel_file = file_str
 
@@ -335,14 +346,14 @@ def main():
                     src_file = frame.f_code.co_filename or ""
                     src_func = frame.f_code.co_name or ""
                     src_line = frame.f_lineno or 0
-                    if "{target_dir_str}" in src_file:
-                        src_file = src_file.replace("{target_dir_str}/", "")
+                    if "$TARGET_DIR" in src_file:
+                        src_file = src_file.replace("$TARGET_DIR" + "/", "")
                 except Exception:
                     pass
-                
+
                 # Track the access
                 access_type = "read" if 'r' in mode else "write" if 'w' in mode or 'a' in mode else "read"
-                TRACE_DATA["file_accesses"].append({{
+                TRACE_DATA["file_accesses"].append({
                     "file": rel_file,
                     "mode": mode,
                     "access_type": access_type,
@@ -350,15 +361,14 @@ def main():
                     "src_file": src_file,
                     "src_func": src_func,
                     "src_line": src_line,
-                }})
+                })
                 TRACE_DATA["files_opened"][rel_file] += 1
-                
-                # Simple debug log for file access (avoid nested f-strings in the outer f-string)
+
                 print("📁 FILE ACCESS: {} ({}) from {}::{}:{}".format(rel_file, mode, src_file, src_func, src_line))
-                
+
             except Exception:
                 pass  # Don't break file operations if tracking fails
-            
+
             # Call original open
             return original_open(file, mode, *args, **kwargs)
 
@@ -371,13 +381,13 @@ def main():
             import pickle
             original_pickle_load = pickle.load
             original_pickle_dump = pickle.dump
-            
+
             def tracked_pickle_load(file):
-                """Wrapped pickle.load to track file access."""
+                \"\"\"Wrapped pickle.load to track file access.\"\"\"
                 try:
                     file_name = getattr(file, 'name', str(file))
-                    if "{target_dir_str}" in file_name:
-                        rel_file = file_name.replace("{target_dir_str}/", "")
+                    if "$TARGET_DIR" in file_name:
+                        rel_file = file_name.replace("$TARGET_DIR" + "/", "")
                     else:
                         rel_file = file_name
 
@@ -390,12 +400,12 @@ def main():
                         src_file = frame.f_code.co_filename or ""
                         src_func = frame.f_code.co_name or ""
                         src_line = frame.f_lineno or 0
-                        if "{target_dir_str}" in src_file:
-                            src_file = src_file.replace("{target_dir_str}/", "")
+                        if "$TARGET_DIR" in src_file:
+                            src_file = src_file.replace("$TARGET_DIR" + "/", "")
                     except Exception:
                         pass
-                    
-                    TRACE_DATA["file_accesses"].append({{
+
+                    TRACE_DATA["file_accesses"].append({
                         "file": rel_file,
                         "mode": "pickle_load",
                         "access_type": "read",
@@ -403,19 +413,19 @@ def main():
                         "src_file": src_file,
                         "src_func": src_func,
                         "src_line": src_line,
-                    }})
+                    })
                     TRACE_DATA["files_opened"][rel_file] += 1
                     print("🥒 PICKLE LOAD: {} from {}::{}:{}".format(rel_file, src_file, src_func, src_line))
                 except Exception:
                     pass
                 return original_pickle_load(file)
-            
+
             def tracked_pickle_dump(obj, file):
-                """Wrapped pickle.dump to track file access."""
+                \"\"\"Wrapped pickle.dump to track file access.\"\"\"
                 try:
                     file_name = getattr(file, 'name', str(file))
-                    if "{target_dir_str}" in file_name:
-                        rel_file = file_name.replace("{target_dir_str}/", "")
+                    if "$TARGET_DIR" in file_name:
+                        rel_file = file_name.replace("$TARGET_DIR" + "/", "")
                     else:
                         rel_file = file_name
 
@@ -428,12 +438,12 @@ def main():
                         src_file = frame.f_code.co_filename or ""
                         src_func = frame.f_code.co_name or ""
                         src_line = frame.f_lineno or 0
-                        if "{target_dir_str}" in src_file:
-                            src_file = src_file.replace("{target_dir_str}/", "")
+                        if "$TARGET_DIR" in src_file:
+                            src_file = src_file.replace("$TARGET_DIR" + "/", "")
                     except Exception:
                         pass
-                    
-                    TRACE_DATA["file_accesses"].append({{
+
+                    TRACE_DATA["file_accesses"].append({
                         "file": rel_file,
                         "mode": "pickle_dump",
                         "access_type": "write",
@@ -441,56 +451,56 @@ def main():
                         "src_file": src_file,
                         "src_func": src_func,
                         "src_line": src_line,
-                    }})
+                    })
                     TRACE_DATA["files_opened"][rel_file] += 1
                     print("🥒 PICKLE SAVE: {} from {}::{}:{}".format(rel_file, src_file, src_func, src_line))
                 except Exception:
                     pass
                 return original_pickle_dump(obj, file)
-            
+
             pickle.load = tracked_pickle_load
             pickle.dump = tracked_pickle_dump
-            
+
         except ImportError:
             pass  # pickle not available
-        
+
         # Apply patches to prevent restart
         print("🐒 Applying patches...")
-        
+
         # Patch os.execv to prevent process replacement
         import os
         original_execv = getattr(os, 'execv', None)
         def patched_execv(*args, **kwargs):
-            print(f"🔧 os.execv patched - preventing restart: {{args}}")
+            print(f"🔧 os.execv patched - preventing restart: {args}")
             TRACE_DATA["patches_applied"].append("os.execv")
             return
         os.execv = patched_execv
-        
+
         # Execute entry point by running the file content with __name__ == "__main__"
-        print(f"📚 Loading {entry_point} source...")
-        with open("{entry_point}", "r") as f:
+        print(f"📚 Loading $ENTRY_POINT source...")
+        with open("$ENTRY_POINT", "r") as f:
             source_code = f.read()
-        
-        print(f"🚀 Executing {entry_point} with __name__ == '__main__'...")
+
+        print(f"🚀 Executing $ENTRY_POINT with __name__ == '__main__'...")
         print("=" * 60)
-        
+
         # Create execution environment that simulates running the entry point directly
-        exec_globals = {{
+        exec_globals = {
             "__name__": "__main__",
-            "__file__": os.path.abspath("{entry_point}"),
-            "__package__": None
-        }}
-        
+            "__file__": os.path.abspath("$ENTRY_POINT"),
+            "__package__": None,
+        }
+
         # Execute source code
         exec(source_code, exec_globals)
-        
+
         print("=" * 60)
-        print(f"✅ {codebase_name.title()} execution completed")
-        
+        print("✅ $CODEBASE_TITLE execution completed")
+
     except SystemExit as e:
-        print(f"🏁 VGMini exited with code: {{e.code}}")
+        print(f"🏁 Target exited with code: {e.code}")
     except Exception as e:
-        print(f"❌ {codebase_name.title()} error: {{e}}")
+        print(f"❌ $CODEBASE_TITLE error: {e}")
         TRACE_DATA["error"] = str(e)
         import traceback
         traceback.print_exc()
@@ -501,7 +511,17 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
+"""
+        )
+
+        script = template.substitute(
+            TARGET_DIR=target_dir_escaped,
+            CODEBASE_TITLE=codebase_name.title(),
+            ENTRY_POINT=entry_point,
+            CODEBASE_NAME=codebase_name,
+            CODEBASE_NAME_LOWER=codebase_name.lower(),
+            COMMAND_ARGS=command_args_repr,
+        )
         return script
     
     def trace_command(self, command: str) -> ExecutionTrace:
