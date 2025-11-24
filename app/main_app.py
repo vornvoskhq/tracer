@@ -27,7 +27,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_run_trace.triggered.connect(self._on_run_trace)
 
         self.action_quit = QtWidgets.QAction("&Quit", self)
-        self.action_quit.triggered.connect(QtWidgets.qApp.quit)  # type: ignore[attr-defined]
+        # Route Quit through the main window's close() so our closeEvent handler
+        # can perform thread cleanup before the application exits.
+        self.action_quit.triggered.connect(self.close)
 
     def _create_menu(self):
         menu = self.menuBar().addMenu("&File")
@@ -80,6 +82,11 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     win = MainWindow()
     win.show()
+
+    # Ensure background worker threads are cleaned up even if the application
+    # is quit via mechanisms other than closing the main window directly.
+    app.aboutToQuit.connect(win.viewer.cleanup_threads)
+
     exit_code = app.exec_()
     print(f"[Execution Trace Viewer] Application exiting with code {exit_code}")
     sys.exit(exit_code)

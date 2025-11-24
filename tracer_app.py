@@ -27,6 +27,11 @@ def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
     win = MainWindow()
     win.show()
+
+    # Ensure background worker threads are cleaned up before the app exits,
+    # even if it is quit without explicitly closing the main window.
+    app.aboutToQuit.connect(win.viewer.cleanup_threads)
+
     sys.exit(app.exec_())
 
 
