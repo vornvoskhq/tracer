@@ -989,6 +989,40 @@ class _TraceWorker(QtCore.QThread):
                     return "Class"
                 return "Func"
 
+            def _reorder_by_entrypoint(calls: List[FunctionCallView]) -> List[FunctionCallView]:
+                """
+                Ensure that the first row in the execution order corresponds to the
+                detected entrypoint file (e.g. vgmini.py) when possible.
+
+                We keep all calls, but rotate the list so that the earliest call
+                from the entrypoint module appears first. Indices are then
+                re-assigned in the new order.
+                """
+                if not calls:
+                    return calls
+
+                entry_point = getattr(tracer, "entry_point", None)
+                if not entry_point:
+                    return calls
+
+                entry_name = Path(entry_point).name
+
+                # Find the earliest call whose file matches the entrypoint module.
+                idx_entry = None
+                for i, fc in enumerate(calls):
+                    file_name = Path(fc.file).name if fc.file else ""
+                    if file_name == entry_name:
+                        idx_entry = i
+                        break
+
+                if idx_entry is None or idx_entry == 0:
+                    return calls
+
+                reordered = calls[idx_entry:] + calls[:idx_entry]
+                for new_index, fc in enumerate(reordered, start=1):
+                    fc.index = new_index
+                return reordered
+
             # Build function execution order from full call records if available
             calls_raw: List[Dict[str, Any]] = getattr(trace, "calls", []) or []
             if calls_raw:
@@ -1096,6 +1130,9 @@ class _TraceWorker(QtCore.QThread):
                                 kind=kind,
                             )
                         )
+
+            # Re-order so the entrypoint module appears first in the execution order.
+            function_calls = _reorder_by_entrypoint(function_calls)
 
             # External file I/O with filtering (unchanged)
             file_accesses_raw: List[Dict[str, Any]] = getattr(trace, "file_accesses", []) or []
