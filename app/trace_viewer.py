@@ -40,8 +40,14 @@ class CodeEditor(QsciScintilla):
         lexer = QsciLexerPython(self)
         self.setLexer(lexer)
 
-        # Line numbers
-        self.setMarginType(0, QsciScintilla.NumberMargin)
+        # Track the base (absolute) line number for the first line of the
+        # currently displayed code segment so that margin numbers can match
+        # the original file's line numbering.
+        self._base_line: int = 1
+
+        # Line numbers: use a text margin so we can control the starting
+        # line number (offset) instead of always starting at 1.
+        self.setMarginType(0, QsciScintilla.TextMargin)
         self.setMarginWidth(0, "0000")
         # Improve contrast of line numbers vs background
         self.setMarginsForegroundColor(QtCore.Qt.black)
@@ -57,8 +63,25 @@ class CodeEditor(QsciScintilla):
         # Always enable word wrap
         self.setWrapMode(QsciScintilla.WrapWord)
 
-    def set_code(self, code: str):
+    def _update_margin_line_numbers(self) -> None:
+        """
+        Update the margin text to reflect the current base line number.
+        """
+        # Clear and repopulate the margin text for each line.
+        lines = self.lines()
+        for i in range(lines):
+            # Absolute line number in the original file.
+            line_no = self._base_line + i
+            self.setMarginText(i, str(line_no))
+
+    def set_code(self, code: str, base_line: int = 1):
+        """
+        Set the editor contents and adjust the visible line numbers so that
+        they match the original file's line numbering, starting at base_line.
+        """
+        self._base_line = max(int(base_line), 1)
         self.setText(code)
+        self._update_margin_line_numbers()
         # Reset cursor to top
         self.setCursorPosition(0, 0)
 
@@ -218,7 +241,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
         command = self._current_command
 
         self.left_tree.clear()
-        self.editor.set_code("")
+        # Reset editor to an empty buffer with line numbers starting at 1.
+        self.editor.set_code("", base_line=1)
         if hasattr(self, "editor_label"):
             self.editor_label.setText("File: (none)")
         self.summary_text.clear()
@@ -393,12 +417,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 start_line = max(call.line - 5, 1)
                 end_line = call.line + 40
                 code = extract_source_segment(file_path, start_line, end_line)
-                self.editor.set_code(code)
+                # Align editor line numbers with the original file
+                self.editor.set_code(code, base_line=start_line)
             else:
                 code = extract_source_segment(
                     func_loc.file_path, func_loc.start_line, func_loc.end_line
                 )
-                self.editor.set_code(code)
+                # Start line numbers at the function's first line (including decorators)
+                self.editor.set_code(code, base_line=func_loc.start_line)
 
             if hasattr(self, "editor_label"):
                 # Show the source file being displayed
@@ -440,16 +466,19 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 start_line = max(src_line - 5, 1)
                 end_line = src_line + 40
                 code = extract_source_segment(file_path, start_line, end_line)
-                self.editor.set_code(code)
+                # Align editor line numbers with the original file
+                self.editor.set_code(code, base_line=start_line)
             elif func_loc:
                 code = extract_source_segment(
                     func_loc.file_path, func_loc.start_line, func_loc.end_line
                 )
-                self.editor.set_code(code)
+                # Start line numbers at the enclosing function's first line
+                self.editor.set_code(code, base_line=func_loc.start_line)
             else:
                 # If we have neither a function location nor a line, just show the top of the file
                 code = extract_source_segment(file_path, 1, 80)
-                self.editor.set_code(code)
+                # Top of file: line numbers start at 1
+                self.editor.set_code(code, base_line=1)
 
             if hasattr(self, "editor_label"):
                 try:
