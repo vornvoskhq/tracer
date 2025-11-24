@@ -276,11 +276,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.expandAll()
 
     def _on_trace_error(self, message: str):
+        # Re-enable controls
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
         self._trace_worker = None
-        QtWidgets.QMessageBox.critical(self, "Trace Failed", message)
+
+        # Prefer console logging over GUI popups for trace errors
+        print(f"[TraceViewerWidget] Trace failed: {message}")
 
     def _on_left_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
         payload = item.data(0, QtCore.Qt.UserRole)
