@@ -23,9 +23,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_open_codebase = QtWidgets.QAction("&Open Codebase...", self)
         self.action_open_codebase.triggered.connect(self._on_open_codebase)
 
-        self.action_set_command = QtWidgets.QAction("&Set Entry Command...", self)
-        self.action_set_command.triggered.connect(self._on_set_command)
-
         self.action_run_trace = QtWidgets.QAction("&Run Trace", self)
         self.action_run_trace.triggered.connect(self._on_run_trace)
 
@@ -35,7 +32,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _create_menu(self):
         menu = self.menuBar().addMenu("&File")
         menu.addAction(self.action_open_codebase)
-        menu.addAction(self.action_set_command)
         menu.addSeparator()
         menu.addAction(self.action_run_trace)
         menu.addSeparator()
@@ -44,25 +40,29 @@ class MainWindow(QtWidgets.QMainWindow):
     # Slots ---------------------------------------------------------------
 
     def _on_open_codebase(self):
+        default_dir = Path("target")
+        if default_dir.exists():
+            start_dir = str(default_dir.resolve())
+        else:
+            start_dir = str(Path.cwd())
         directory = QtWidgets.QFileDialog.getExistingDirectory(
             self,
             "Select Codebase Folder",
-            str(Path.cwd()),
+            start_dir,
         )
         if directory:
             self.viewer.set_codebase(Path(directory))
 
-    def _on_set_command(self):
-        text, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Set Entry Command",
-            "Command to trace (as you would type on the command line):",
-        )
-        if ok and text.strip():
-            self.viewer.set_command(text.strip())
-
     def _on_run_trace(self):
         self.viewer.run_trace()
+
+    def closeEvent(self, event):
+        """
+        Ensure background threads are stopped cleanly before the app exits.
+        """
+        if hasattr(self.viewer, "cleanup_threads"):
+            self.viewer.cleanup_threads()
+        event.accept()
 
 
 def main():

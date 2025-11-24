@@ -52,6 +52,9 @@ class CodeEditor(QsciScintilla):
         self.setAutoIndent(True)
         self.setFolding(QsciScintilla.BoxedTreeFoldStyle)
 
+        # Always enable word wrap
+        self.setWrapMode(QsciScintilla.WrapWord)
+
     def set_code(self, code: str):
         self.setText(code)
         # Reset cursor to top
@@ -69,6 +72,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self._llm_client = OpenRouterClient()
 
+        # Background workers
+        self._trace_worker: Optional[_TraceWorker] = None
+        self._llm_worker: Optional[_LLMSummaryWorker] = None
+
         self._build_ui()
         self._connect_signals()
 
@@ -79,25 +86,46 @@ class TraceViewerWidget(QtWidgets.QWidget):
         main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
         main_layout.addWidget(main_splitter)
 
-        # Left side: vertical split (top: execution + I/O, bottom: summary)
+        # Left side: vertical split (top: controls + execution + I/O, bottom: summary)
         left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, main_splitter)
 
-        # Top-left: combined function execution and file I/O
-        self.left_tree = QtWidgets.QTreeWidget(left_splitter)
+        # Top-left container: codebase label, command row, combined function execution and file I/O
+        top_left = QtWidgets.QWidget(left_splitter)
+        top_left_layout = QtWidgets.QVBoxLayout(top_left)
+        top_left_layout.setContentsMargins(4, 4, 4, 4)
+        top_left_layout.setSpacing(4)
+
+        # Codebase label that reflects current selection
+        self.codebase_label = QtWidgets.QLabel("Codebase: (none selected)", top_left)
+        self.codebase_label.setStyleSheet("font-weight: bold;")
+        top_left_layout.addWidget(self.codebase_label)
+
+        # Command row: entry command textbox + Run Trace button
+        command_row = QtWidgets.QHBoxLayout()
+        self.command_edit = QtWidgets.QLineEdit(top_left)
+        self.command_edit.setPlaceholderText("Entry command to trace (e.g., ./vg list)")
+        self.run_button = QtWidgets.QPushButton("Run Trace", top_left)
+        command_row.addWidget(self.command_edit, stretch=1)
+        command_row.addWidget(self.run_button, stretch=0)
+        top_left_layout.addLayout(command_row)
+
+        # Combined function execution and file I/O tree
+        self.left_tree = QtWidgets.QTreeWidget(top_left)
         self.left_tree.setHeaderLabels(
             ["Order", "Kind", "File/Func", "Line/Mode", "Extra"]
         )
         self.left_tree.setColumnWidth(0, 60)
         self.left_tree.setColumnWidth(1, 80)
         self.left_tree.setColumnWidth(2, 260)
+        top_left_layout.addWidget(self.left_tree, stretch=1)
 
         # Bottom-left: summary area
         summary_container = QtWidgets.QWidget(left_splitter)
         summary_layout = QtWidgets.QVBoxLayout(summary_container)
+        summary_layout.setContentsMargins(4, 4, 4, 4)
+        summary_layout.setSpacing(4)
 
-        self.summary_label = QtWidgets.QLabel(
-            "LLM Summary of Selected Function", summary_container
-        )
+        self.summary_label = QtWidgets.QLabel("LLM Summary", summary_container)
         self.summary_label.setStyleSheet("font-weight: bold;")
         self.summary_text = QtWidgets.QPlainTextEdit(summary_container)
         self.summary_text.setReadOnly(True)
@@ -112,23 +140,27 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Right side: code editor
         self.editor = CodeEditor(main_splitter)
 
-        # Adjust splitter sizes
+        # Adjust splitter sizes: make summary vertically smaller
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        left_splitter.setStretchFactor(0, 3)
-        left_splitter.setStretchFactor(1, 2)
+        left_splitter.setStretchFactor(0, 5)
+        left_splitter.setStretchFactor(1, 1)
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
         self.summary_button.clicked.connect(self._on_summarize_clicked)
+        self.run_button.clicked.connect(self._on_run_button_clicked)
 
     # Public API ----------------------------------------------------------
 
     def set_codebase(self, path: Path):
         self._current_codebase = path
+        # Update label to reflect current codebase
+        self.codebase_label.setText(f"Codebase: {path}")
 
     def set_command(self, command: str):
         self._current_command = command
+        self.command_edit.setText(command)
 
     def has_configuration(self) -> bool:
         return self._current_codebase is not None and bool(self._current_command)
@@ -140,11 +172,22 @@ class TraceViewerWidget(QtWidgets.QWidget):
         This is potentially slow; we run it in a background thread to keep
         the UI responsive.
         """
+        # Pull command from the textbox
+        self._current_command = self.command_edit.text().strip()
+
         if not self.has_configuration():
             QtWidgets.QMessageBox.warning(
                 self,
                 "Trace Not Configured",
-                "Please select a codebase and command first.",
+                "Please select a codebase and enter a command first.",
+            )
+            return
+
+        if self._trace_worker is not None and self._trace_worker.isRunning():
+            QtWidgets.QMessageBox.information(
+                self,
+                "Trace Running",
+                "A trace is already running. Please wait for it to complete.",
             )
             return
 
@@ -158,12 +201,17 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.setDisabled(True)
         self.summary_button.setDisabled(True)
+        self.run_button.setDisabled(True)
 
         worker = _TraceWorker(codebase, command)
         worker.finished_with_result.connect(self._on_trace_finished)
         worker.error_occurred.connect(self._on_trace_error)
+        self._trace_worker = worker
 
         worker.start()
+
+    def _on_run_button_clicked(self):
+        self.run_trace()
 
     # Slots ---------------------------------------------------------------
 
@@ -177,6 +225,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
+        self.run_button.setDisabled(False)
+        self._trace_worker = None
 
         # Populate tree with collapsible groups
         root_execution = QtWidgets.QTreeWidgetItem(
@@ -225,6 +275,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
     def _on_trace_error(self, message: str):
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
+        self.run_button.setDisabled(False)
+        self._trace_worker = None
         QtWidgets.QMessageBox.critical(self, "Trace Failed", message)
 
     def _on_left_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
@@ -276,18 +328,39 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_button.setDisabled(True)
         self.summary_text.setPlainText("Requesting summary from OpenRouter...")
 
+        if self._llm_worker is not None and self._llm_worker.isRunning():
+            # Avoid starting multiple concurrent LLM requests
+            return
+
         worker = _LLMSummaryWorker(code, self._llm_client)
         worker.finished_with_result.connect(self._on_summary_finished)
         worker.error_occurred.connect(self._on_summary_error)
+        self._llm_worker = worker
         worker.start()
 
     def _on_summary_finished(self, text: str):
         self.summary_button.setDisabled(False)
         self.summary_text.setPlainText(text)
+        self._llm_worker = None
 
     def _on_summary_error(self, message: str):
         self.summary_button.setDisabled(False)
         self.summary_text.setPlainText(message)
+        self._llm_worker = None
+
+    def cleanup_threads(self):
+        """
+        Stop background threads cleanly. Intended to be called on application exit.
+        """
+        if self._trace_worker is not None and self._trace_worker.isRunning():
+            self._trace_worker.quit()
+            self._trace_worker.wait()
+            self._trace_worker = None
+
+        if self._llm_worker is not None and self._llm_worker.isRunning():
+            self._llm_worker.quit()
+            self._llm_worker.wait()
+            self._llm_worker = None
 
 
 class _TraceWorker(QtCore.QThread):
