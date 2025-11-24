@@ -56,10 +56,15 @@ class MainExecutionTracer:
                     self.target_dir = codebases[0]
                     self.codebase_name = codebases[0].name
                 elif len(codebases) > 1:
-                    print(f"🔍 Multiple codebases found: {[d.name for d in codebases]}")
-                    print(f"📁 Using default: {codebases[0].name}")
-                    self.target_dir = codebases[0]
-                    self.codebase_name = codebases[0].name
+                    # Condensed summary of auto-selected codebase
+                    default = codebases[0]
+                    others = ", ".join(d.name for d in codebases[1:])
+                    if others:
+                        print(f"📁 Codebase: target/{default.name} (others: {others})")
+                    else:
+                        print(f"📁 Codebase: target/{default.name}")
+                    self.target_dir = default
+                    self.codebase_name = default.name
                 else:
                     raise FileNotFoundError("No codebases found in target/ directory")
             else:
@@ -631,15 +636,18 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
     # Hide lambda frames in the report
     calls = [c for c in raw_calls if c.get("function") != "<lambda>"]
     if calls:
-        output.append("📞 Function Execution Order (Call, Depth, File, Func, Line):")
+        output.append("📞 Function Execution Order:")
         # Header with short names to improve alignment
-        output.append("Call\tDepth\tFile\tFunc\tLine")
+        output.append("Call\tLvl\tFile\tFunc\tLine")
         for idx, call in enumerate(calls, start=1):
             file_name = call.get("file", "")
             func_name = call.get("function", "")
             line_no = call.get("line", "")
-            depth = call.get("depth", 0)
-            output.append(f"{idx}\t{depth}\t{file_name}\t{func_name}\t{line_no}")
+            depth = call.get("depth", 0) or 0
+            # Indent function name by depth for intuitive visual hierarchy
+            indent = "" if depth <= 1 else "  " * (depth - 1)
+            func_display = f"{indent}{func_name}"
+            output.append(f"{idx}\t{depth}\t{file_name}\t{func_display}\t{line_no}")
         output.append("")
     
     # External file I/O events (text, config, pickle, images, etc.)
@@ -675,8 +683,8 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
             else:
                 caller_info.append((access, "", "", ""))
         
-        output.append("📁 External File I/O Events (Order, AccessType, Mode, File, CallerFile, CallerFunc, CallerLine):")
-        output.append("Order\tAccessType\tMode\tFile\tCallerFile\tCallerFunc\tCallerLine")
+        output.append("📁 External File I/O:")
+        output.append("Order\tType\tMode\tFile\tSrcFile\tSrcFunc\tSrcLine")
         for idx, (access, c_file, c_func, c_line) in enumerate(caller_info, start=1):
             access_type = access.get("access_type", "")
             mode = access.get("mode", "")
