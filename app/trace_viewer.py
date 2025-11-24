@@ -350,11 +350,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
             # Look backwards for the most recent shallower-depth call.
             for j in range(i - 1, -1, -1):
                 prev = self._function_calls[j]
-                if prev.depth &lt; call.depth:
+                if prev.depth < call.depth:
                     # Use file:line for the caller.
                     caller_line = prev.line if prev.line else 0
                     # Avoid showing meaningless "0" line numbers.
-                    if prev.file and caller_line &gt; 0:
+                    if prev.file and caller_line > 0:
                         caller_str = f"{prev.file}:{caller_line}"
                     elif prev.file:
                         caller_str = prev.file
