@@ -342,7 +342,7 @@ def main():
                 
                 # Track the access
                 access_type = "read" if 'r' in mode else "write" if 'w' in mode or 'a' in mode else "read"
-                TRACE_DATA["file_accesses"].append({
+                TRACE_DATA["file_accesses"].append({{
                     "file": rel_file,
                     "mode": mode,
                     "access_type": access_type,
@@ -350,11 +350,11 @@ def main():
                     "src_file": src_file,
                     "src_func": src_func,
                     "src_line": src_line,
-                })
+                }})
                 TRACE_DATA["files_opened"][rel_file] += 1
                 
-                # Simple debug log for file access
-                print(f"📁 FILE ACCESS: {rel_file} ({mode}) from {src_file}::{src_func}:{src_line}")
+                # Simple debug log for file access (avoid nested f-strings in the outer f-string)
+                print("📁 FILE ACCESS: {} ({}) from {}::{}:{}".format(rel_file, mode, src_file, src_func, src_line))
                 
             except Exception:
                 pass  # Don't break file operations if tracking fails
@@ -395,7 +395,7 @@ def main():
                     except Exception:
                         pass
                     
-                    TRACE_DATA["file_accesses"].append({
+                    TRACE_DATA["file_accesses"].append({{
                         "file": rel_file,
                         "mode": "pickle_load",
                         "access_type": "read",
@@ -403,9 +403,9 @@ def main():
                         "src_file": src_file,
                         "src_func": src_func,
                         "src_line": src_line,
-                    })
+                    }})
                     TRACE_DATA["files_opened"][rel_file] += 1
-                    print(f"🥒 PICKLE LOAD: {rel_file} from {src_file}::{src_func}:{src_line}")
+                    print("🥒 PICKLE LOAD: {} from {}::{}:{}".format(rel_file, src_file, src_func, src_line))
                 except Exception:
                     pass
                 return original_pickle_load(file)
@@ -433,7 +433,7 @@ def main():
                     except Exception:
                         pass
                     
-                    TRACE_DATA["file_accesses"].append({
+                    TRACE_DATA["file_accesses"].append({{
                         "file": rel_file,
                         "mode": "pickle_dump",
                         "access_type": "write",
@@ -441,9 +441,9 @@ def main():
                         "src_file": src_file,
                         "src_func": src_func,
                         "src_line": src_line,
-                    })
+                    }})
                     TRACE_DATA["files_opened"][rel_file] += 1
-                    print(f"🥒 PICKLE SAVE: {rel_file} from {src_file}::{src_func}:{src_line}")
+                    print("🥒 PICKLE SAVE: {} from {}::{}:{}".format(rel_file, src_file, src_func, src_line))
                 except Exception:
                     pass
                 return original_pickle_dump(obj, file)
