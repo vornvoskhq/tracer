@@ -31,13 +31,27 @@ class MainWindow(QtWidgets.QMainWindow):
         # can perform thread cleanup before the application exits.
         self.action_quit.triggered.connect(self.close)
 
+        # Config menu actions
+        self.action_toggle_caller_column = QtWidgets.QAction(
+            "Show &Caller Column", self
+        )
+        self.action_toggle_caller_column.setCheckable(True)
+        self.action_toggle_caller_column.setChecked(True)
+        # Toggle visibility of the Caller column in the trace viewer
+        self.action_toggle_caller_column.toggled.connect(
+            self._on_toggle_caller_column
+        )
+
     def _create_menu(self):
-        menu = self.menuBar().addMenu("&File")
-        menu.addAction(self.action_open_codebase)
-        menu.addSeparator()
-        menu.addAction(self.action_run_trace)
-        menu.addSeparator()
-        menu.addAction(self.action_quit)
+        file_menu = self.menuBar().addMenu("&File")
+        file_menu.addAction(self.action_open_codebase)
+        file_menu.addSeparator()
+        file_menu.addAction(self.action_run_trace)
+        file_menu.addSeparator()
+        file_menu.addAction(self.action_quit)
+
+        config_menu = self.menuBar().addMenu("&Config")
+        config_menu.addAction(self.action_toggle_caller_column)
 
     # Slots ---------------------------------------------------------------
 
@@ -57,6 +71,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_run_trace(self):
         self.viewer.run_trace()
+
+    def _on_toggle_caller_column(self, checked: bool):
+        """
+        Toggle visibility of the Caller column in the left-hand trace tree.
+        """
+        if hasattr(self.viewer, "set_caller_column_visible"):
+            self.viewer.set_caller_column_visible(checked)
 
     def closeEvent(self, event):
         """

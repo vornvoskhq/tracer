@@ -140,20 +140,38 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Combined function execution and file I/O tree
         self.left_tree = QtWidgets.QTreeWidget(top_left)
-        # Columns: (indent), Order, Depth, Kind, File, Function, Line/Mode
+        # Columns:
+        #   0: (indent)
+        #   1: Order
+        #   2: Depth
+        #   3: Kind
+        #   4: Caller (file:line)
+        #   5: File
+        #   6: Function
+        #   7: Line/Mode
         # Column 0 is a narrow, mostly empty column that holds the tree
         # indentation and expand/collapse icons so that the visible "Order"
         # numbers in column 1 are not pushed to the right by tree padding.
         self.left_tree.setHeaderLabels(
-            ["", "Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
+            ["", "Order", "Depth", "Kind", "Caller", "File", "Function", "Line/Mode"]
         )
-        # Make the indent column very narrow and the Order column small
-        self.left_tree.setColumnWidth(0, 18)
-        self.left_tree.setColumnWidth(1, 50)
-        self.left_tree.setColumnWidth(2, 60)
-        self.left_tree.setColumnWidth(3, 70)
-        self.left_tree.setColumnWidth(4, 220)
-        self.left_tree.setColumnWidth(5, 140)
+        # Approximate column widths based on expected content:
+        # - indent: tiny
+        # - Order: up to 3 digits
+        # - Depth: small integer
+        # - Kind: e.g. "Module"
+        # - Caller: "src/file.py:123"
+        # - File: "src/experiment_configs.py"
+        # - Function: "VisualizationConfig"
+        # - Line/Mode: 3-digit line or short mode
+        self.left_tree.setColumnWidth(0, 14)   # indent
+        self.left_tree.setColumnWidth(1, 40)   # Order (3 digits)
+        self.left_tree.setColumnWidth(2, 40)   # Depth
+        self.left_tree.setColumnWidth(3, 70)   # Kind
+        self.left_tree.setColumnWidth(4, 140)  # Caller
+        self.left_tree.setColumnWidth(5, 210)  # File
+        self.left_tree.setColumnWidth(6, 170)  # Function
+        self.left_tree.setColumnWidth(7, 60)   # Line/Mode
         # Enable a custom context menu so we can offer "Copy tree to clipboard"
         self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
@@ -305,24 +323,34 @@ class TraceViewerWidget(QtWidgets.QWidget):
         #   1: Order
         #   2: Depth
         #   3: Kind
-        #   4: File
-        #   5: Function
-        #   6: Line/Mode
+        #   4: Caller
+        #   5: File
+        #   6: Function
+        #   7: Line/Mode
         root_execution = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "", "Exec", "Function Execution Order", "", ""]
-        )
-        #   1: Order
-        #   2: Depth
-        #   3: Kind
-        #   4: File
-        #   5: Function
-        #   6: Line/Mode
-        root_execution = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "", "Exec", "Function Execution Order", "", ""]
+            self.left_tree, ["", "", "", "Exec", "", "Function Execution Order", ""]
         )
         root_execution.setExpanded(True)
 
-        for call in self._function_calls:
+        # Pre-compute caller strings for each function call based on depth.
+        caller_strings: List[str] = []
+        for i, call in enumerate(self._function_calls):
+            caller_str = ""
+            # Look backwards for the most recent shallower-depth call.
+            for j in range(i - 1, -1, -1):
+                prev = self._function_calls[j]
+                if prev.depth < call.depth:
+                    # Use file:line for the caller.
+                    caller_line = prev.line if prev.line else 0
+                    # Avoid showing meaningless "0" line numbers.
+                    if prev.file and caller_line > 0:
+                        caller_str = f"{prev.file}:{caller_line}"
+                    elif prev.file:
+                        caller_str = prev.file
+                    break
+            caller_strings.append(caller_str)
+
+        for call, caller_str in zip(self._function_calls, caller_strings):
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
@@ -330,6 +358,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     str(call.index),          # Order
                     str(call.depth),          # Depth
                     call.kind,                # Kind
+                    caller_str,               # Caller (inferred)
                     call.file,                # File
                     call.function,            # Function
                     str(call.line),           # Line
@@ -339,11 +368,18 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, ("func", call))
 
         root_io = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "", "I/O", "External File I/O", "", ""]
+            self.left_tree, ["", "", "", "I/O", "", "External File I/O", ""]
         )
         root_io.setExpanded(True)
 
         for fa in file_accesses:
+            # For I/O rows, use the recorded src_file:src_line as the caller.
+            if fa.src_file and fa.src_line:
+                io_caller = f"{fa.src_file}:{fa.src_line}"
+            elif fa.src_file:
+                io_caller = fa.src_file
+            else:
+                io_caller = ""
             item = QtWidgets.QTreeWidgetItem(
                 root_io,
                 [
@@ -351,6 +387,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     str(fa.index),           # Order
                     "",                      # Depth (not applicable)
                     fa.mode,                 # Kind / mode
+                    io_caller,               # Caller (I/O source)
                     fa.file_path,            # File
                     f"{fa.src_file}:{fa.src_func}",  # Function context
                     str(fa.src_line) if fa.src_line else "",  # Line
@@ -690,6 +727,23 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_button.setDisabled(False)
         self.summary_text.setPlainText(message)
         self._llm_worker = None
+
+    def set_caller_column_visible(self, visible: bool) -> None:
+        """
+        Show or hide the Caller column in the left-hand tree.
+
+        Column indices:
+          0: (indent)
+          1: Order
+          2: Depth
+          3: Kind
+          4: Caller
+          5: File
+          6: Function
+          7: Line/Mode
+        """
+        # Column 4 is the Caller column.
+        self.left_tree.setColumnHidden(4, not visible)
 
     def cleanup_threads(self):
         """
