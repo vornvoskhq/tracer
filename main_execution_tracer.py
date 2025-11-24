@@ -257,7 +257,7 @@ def trace_calls(frame, event, arg):
             if len(parts) > 1:
                 rel_path = "lib/" + parts[-1]
         
-        func_key = f"{rel_path}::{function_name}"
+        func_key = f"{{rel_path}}::{{function_name}}"
         
         # Update counters
         TRACE_DATA["functions"][func_key] += 1
