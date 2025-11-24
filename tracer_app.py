@@ -24,8 +24,15 @@ from app.main_app import MainWindow  # noqa: E402
 
 
 def main() -> None:
+    # Optional first CLI argument can be a path to an initial codebase folder.
+    initial_codebase = None
+    if len(sys.argv) > 1:
+        candidate = Path(sys.argv[1]).expanduser().resolve()
+        if candidate.exists() and candidate.is_dir():
+            initial_codebase = candidate
+
     app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow()
+    win = MainWindow(initial_codebase=initial_codebase)
     win.show()
 
     def _on_about_to_quit():
