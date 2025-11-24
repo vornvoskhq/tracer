@@ -28,9 +28,22 @@ def main() -> None:
     win = MainWindow()
     win.show()
 
+    def _on_about_to_quit():
+        """
+        Slot invoked when QApplication is about to quit (tracer_app entrypoint).
+
+        This is a last-chance hook to ensure worker threads are cleaned up and
+        to emit diagnostics about the shutdown path.
+        """
+        print("[Execution Trace Viewer] QApplication.aboutToQuit (tracer_app): beginning shutdown, cleaning up worker threads...")
+        if hasattr(win, "viewer") and hasattr(win.viewer, "cleanup_threads"):
+            win.viewer.cleanup_threads()
+        else:
+            print("[Execution Trace Viewer] QApplication.aboutToQuit (tracer_app): no viewer/cleanup_threads available.")
+
     # Ensure background worker threads are cleaned up before the app exits,
     # even if it is quit without explicitly closing the main window.
-    app.aboutToQuit.connect(win.viewer.cleanup_threads)
+    app.aboutToQuit.connect(_on_about_to_quit)
 
     sys.exit(app.exec_())
 

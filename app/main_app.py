@@ -74,6 +74,7 @@ def main():
 
         print("\n[Execution Trace Viewer] Unhandled exception in main thread:")
         traceback.print_exception(exc_type, exc_value, exc_traceback)
+        print("[Execution Trace Viewer] Application will terminate due to the above unhandled exception.")
         # Delegate to the default handler as well so Qt / Python can do their normal shutdown.
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
@@ -83,9 +84,22 @@ def main():
     win = MainWindow()
     win.show()
 
+    def _on_about_to_quit():
+        """
+        Slot invoked when QApplication is about to quit.
+
+        This is a last-chance hook to ensure worker threads are cleaned up and
+        to emit diagnostics about the shutdown path.
+        """
+        print("[Execution Trace Viewer] QApplication.aboutToQuit: beginning shutdown, cleaning up worker threads...")
+        if hasattr(win, "viewer") and hasattr(win.viewer, "cleanup_threads"):
+            win.viewer.cleanup_threads()
+        else:
+            print("[Execution Trace Viewer] QApplication.aboutToQuit: no viewer/cleanup_threads available.")
+
     # Ensure background worker threads are cleaned up even if the application
     # is quit via mechanisms other than closing the main window directly.
-    app.aboutToQuit.connect(win.viewer.cleanup_threads)
+    app.aboutToQuit.connect(_on_about_to_quit)
 
     exit_code = app.exec_()
     print(f"[Execution Trace Viewer] Application exiting with code {exit_code}")

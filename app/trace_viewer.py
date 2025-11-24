@@ -429,11 +429,18 @@ class TraceViewerWidget(QtWidgets.QWidget):
         """
         Stop background threads cleanly. Intended to be called on application exit.
 
-        As a precaution, this also prints basic debug information to the console
-        about any worker threads that were still running at shutdown time.
+        This prints debug information to the console about any worker threads
+        that were still running at shutdown time so that unexpected exits can
+        be diagnosed more easily.
         """
+        print("[TraceViewerWidget] cleanup_threads: starting thread cleanup")
+
         # Trace worker
         if self._trace_worker is not None:
+            print(
+                "[TraceViewerWidget] cleanup_threads: trace worker object present: "
+                f"{self._trace_worker!r}, isRunning={self._trace_worker.isRunning()}"
+            )
             if self._trace_worker.isRunning():
                 print(
                     "[TraceViewerWidget] cleanup_threads: trace worker still running, "
@@ -449,9 +456,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     "[TraceViewerWidget] cleanup_threads: trace worker exists but is not running."
                 )
             self._trace_worker = None
+        else:
+            print("[TraceViewerWidget] cleanup_threads: no trace worker to clean up")
 
         # LLM worker
         if self._llm_worker is not None:
+            print(
+                "[TraceViewerWidget] cleanup_threads: LLM worker object present: "
+                f"{self._llm_worker!r}, isRunning={self._llm_worker.isRunning()}"
+            )
             if self._llm_worker.isRunning():
                 print(
                     "[TraceViewerWidget] cleanup_threads: LLM worker still running, "
@@ -467,6 +480,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     "[TraceViewerWidget] cleanup_threads: LLM worker exists but is not running."
                 )
             self._llm_worker = None
+        else:
+            print("[TraceViewerWidget] cleanup_threads: no LLM worker to clean up")
+
+        print("[TraceViewerWidget] cleanup_threads: finished thread cleanup")
 
 
 class _TraceWorker(QtCore.QThread):
