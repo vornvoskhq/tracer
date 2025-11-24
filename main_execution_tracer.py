@@ -670,9 +670,9 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
         for access in filtered_accesses:
             access_ts = access.get("timestamp", 0.0)
             # Advance call_index while the call timestamp is <= access timestamp
-            while call_index + 1 < n_calls and calls[call_index + 1].get("timestamp", 0.0) <= access_ts:
+            while call_index + 1 &lt; n_calls and calls[call_index + 1].get("timestamp", 0.0) &lt;= access_ts:
                 call_index += 1
-            if n_calls > 0:
+            if n_calls &gt; 0:
                 caller = calls[call_index]
                 caller_info.append((
                     access,
@@ -684,12 +684,12 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
                 caller_info.append((access, "", "", ""))
         
         output.append("📁 External File I/O:")
-        output.append("Order\tType\tMode\tFile\tSrcFile\tSrcFunc\tSrcLine")
+        # No separate type column; show mode (r/w/a, pickle_load, etc.) and put File last
+        output.append("Order\tMode\tSrcFile\tSrcFunc\tSrcLine\tFile")
         for idx, (access, c_file, c_func, c_line) in enumerate(caller_info, start=1):
-            access_type = access.get("access_type", "")
             mode = access.get("mode", "")
             file_path = access.get("file", "")
-            output.append(f"{idx}\t{access_type}\t{mode}\t{file_path}\t{c_file}\t{c_func}\t{c_line}")
+            output.append(f"{idx}\t{mode}\t{c_file}\t{c_func}\t{c_line}\t{file_path}")
         output.append("")
     
     return "\n".join(output)
