@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import ast
 
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
@@ -18,6 +19,7 @@ class FunctionCallView:
     function: str
     line: int
     depth: int
+    kind: str  # "Func", "Class", or "Module"
 
 
 @dataclass
@@ -327,7 +329,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     "",                       # (indent only)
                     str(call.index),          # Order
                     str(call.depth),          # Depth
-                    "Func",                   # Kind
+                    call.kind,                # Kind
                     call.file,                # File
                     call.function,            # Function
                     str(call.line),           # Line
@@ -728,6 +730,75 @@ class _TraceWorker(QtCore.QThread):
             function_calls: List[FunctionCallView] = []
             file_accesses: List[FileAccessView] = []
 
+            # Simple classification cache to avoid reparsing the same file
+            ast_cache: Dict[Path, ast.AST] = {}
+
+            def classify_kind(file_rel: str, func_name: str, line_no: int) -> str:
+                """
+                Classify the kind of call for UI purposes:
+
+                  - "Module" for <module> entries
+                  - "Class"  when the enclosing AST node is a ClassDef
+                  - "Func"   otherwise
+
+                This is a best-effort heuristic based on the AST and may not
+                perfectly classify every case, but is good enough to visually
+                distinguish import-time class definitions from regular function
+                calls in the trace.
+                """
+                if func_name == "<module>":
+                    return "Module"
+
+                if not file_rel or not line_no:
+                    return "Func"
+
+                file_path = (self._codebase / file_rel).resolve()
+                if not file_path.exists():
+                    return "Func"
+
+                # Load and cache the AST for this file
+                tree = ast_cache.get(file_path)
+                if tree is None:
+                    try:
+                        source = file_path.read_text(encoding="utf-8")
+                        tree = ast.parse(source, filename=str(file_path))
+                    except Exception:
+                        return "Func"
+                    ast_cache[file_path] = tree
+
+                best_node = None
+                best_span = None  # length of span (end - start)
+
+                for node in ast.walk(tree):
+                    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        continue
+
+                    start = getattr(node, "lineno", None)
+                    if start is None:
+                        continue
+
+                    end = getattr(node, "end_lineno", None)
+                    if not isinstance(end, int):
+                        # Fallback: approximate by taking the max child lineno
+                        max_line = start
+                        for child in ast.walk(node):
+                            child_line = getattr(child, "lineno", None)
+                            if isinstance(child_line, int) and child_line > max_line:
+                                max_line = child_line
+                        end = max_line
+
+                    if not (start <= line_no <= end):
+                        continue
+
+                    span = end - start
+                    if best_node is None or span < best_span:
+                        best_node = node
+                        best_span = span
+
+                if isinstance(best_node, ast.ClassDef):
+                    return "Class"
+                return "Func"
+
             # Build function execution order from full call records if available
             calls_raw: List[Dict[str, Any]] = getattr(trace, "calls", []) or []
             if calls_raw:
@@ -736,13 +807,18 @@ class _TraceWorker(QtCore.QThread):
                     # Filter out lambda functions
                     if func_name == "<lambda>":
                         continue
+                    file_rel = c.get("file", "")
+                    line_no = int(c.get("line", 0) or 0)
+                    depth = int(c.get("depth", 0) or 0)
+                    kind = classify_kind(file_rel, func_name, line_no)
                     function_calls.append(
                         FunctionCallView(
                             index=idx,
-                            file=c.get("file", ""),
+                            file=file_rel,
                             function=func_name,
-                            line=int(c.get("line", 0) or 0),
-                            depth=int(c.get("depth", 0) or 0),
+                            line=line_no,
+                            depth=depth,
+                            kind=kind,
                         )
                     )
 
@@ -807,61 +883,58 @@ class _TraceWorker(QtCore.QThread):
                             )
                         )
                 else:
-                    # Fallback to call_sequence without line numbers
-                    for idx, entry in enumerate(trace.call_sequence, start=1):
-                        if "::" in entry:
-                            file_part, func_name = entry.split("::", 1)
-                        else:
-                            file_part, func_name = "", entry
+                    # Fallback to call_sequence with or without line numbers
+                    sequence_with_lines = getattr(trace, "call_sequence_with_lines", None)
+                    if sequence_with_lines:
+                        for idx, entry in enumerate(sequence_with_lines, start=1):
+                            # entry: "file.py::func:line"
+                            file_part, rest = entry.split("::", 1)
+                            if ":" in rest:
+                                func_name, line_str = rest.split(":", 1)
+                                try:
+                                    line_no = int(line_str)
+                                except ValueError:
+                                    line_no = 0
+                            else:
+                                func_name = rest
+                                line_no = 0
 
-                        if func_name == "<lambda>":
-                            continue
+                            if func_name == "<lambda>":
+                                continue
 
-                        function_calls.append(
-                            FunctionCallView(
-                                index=idx,
-                                file=file_part,
-                                function=func_name,
-                                line=0,
-                                depth=0,
+                            kind = classify_kind(file_part, func_name, line_no)
+                            function_calls.append(
+                                FunctionCallView(
+                                    index=idx,
+                                    file=file_part,
+                                    function=func_name,
+                                    line=line_no,
+                                    depth=0,
+                                    kind=kind,
+                                )
                             )
-                        )
+                    else:
+                        # Fallback to call_sequence without line numbers
+                        for idx, entry in enumerate(trace.call_sequence, start=1):
+                            if "::" in entry:
+                                file_part, func_name = entry.split("::", 1)
+                            else:
+                                file_part, func_name = "", entry
 
-            # External file I/O with filtering
-            file_accesses_raw: List[Dict[str, Any]] = getattr(trace, "file_accesses", []) or []
-            for idx, fa in enumerate(file_accesses_raw, start=1):
-                file_path = fa.get("file", "") or ""
-                # Filter out virtualenv and standard-library style paths
-                skip = False
-                for pattern in ("/.venv/", "\\\\.venv\\\\", "site-packages", "/lib/python", "\\\\Lib\\\\"):
-                    if pattern in file_path:
-                        skip = True
-                        break
-                if skip:
-                    continue
+                            if func_name == "<lambda>":
+                                continue
 
-                file_accesses.append(
-                    FileAccessView(
-                        index=idx,
-                        mode=fa.get("mode", ""),
-                        src_file=fa.get("src_file", ""),
-                        src_func=fa.get("src_func", ""),
-                        src_line=int(fa.get("src_line", 0) or 0),
-                        file_path=file_path,
-                    )
-                )
-
-            self.finished_with_result.emit(function_calls, file_accesses)
-        except Exception as exc:
-            self.error_occurred.emit(str(exc))
-
-
-class _LLMSummaryWorker(QtCore.QThread):
-    finished_with_result = QtCore.pyqtSignal(str)
-    error_occurred = QtCore.pyqtSignal(str)
-
-    def __init__(self, code: str, client: OpenRouterClient):
-        super().__init__()
+                            kind = classify_kind(file_part, func_name, 0)
+                            function_calls.append(
+                                FunctionCallView(
+                                    index=idx,
+                                    file=file_part,
+                                    function=func_name,
+                                    line=0,
+                                    depth=0,
+                                    kind=kind,
+                                )
+                            )
         self._code = code
         self._client = client
 
