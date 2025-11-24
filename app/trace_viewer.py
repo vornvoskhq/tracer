@@ -195,9 +195,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
-        self.left_tree.customContextMenuRequested.connect(
-            self._on_left_tree_context_menu
-        )
+        # Guard the context menu hook so that a missing handler cannot break
+        # startup. If the handler exists on this instance, we connect it.
+        try:
+            handler = self._on_left_tree_context_menu  # type: ignore[attr-defined]
+        except AttributeError:
+            handler = None
+        if handler is not None:
+            self.left_tree.customContextMenuRequested.connect(handler)
         self.summary_button.clicked.connect(self._on_summarize_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
