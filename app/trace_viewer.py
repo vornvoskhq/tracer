@@ -145,21 +145,23 @@ class TraceViewerWidget(QtWidgets.QWidget):
         #   1: Order
         #   2: Depth
         #   3: Kind
-        #   4: Caller (file:line)
-        #   5: File
-        #   6: Function
-        #   7: Line/Mode
+        #   4: Phase  ("Import" vs "Runtime")
+        #   5: Caller (file:line)
+        #   6: File
+        #   7: Function
+        #   8: Line/Mode
         # Column 0 is a narrow, mostly empty column that holds the tree
         # indentation and expand/collapse icons so that the visible "Order"
         # numbers in column 1 are not pushed to the right by tree padding.
         self.left_tree.setHeaderLabels(
-            ["", "Order", "Depth", "Kind", "Caller", "File", "Function", "Line/Mode"]
+            ["", "Order", "Depth", "Kind", "Phase", "Caller", "File", "Function", "Line/Mode"]
         )
         # Approximate column widths based on expected content:
         # - indent: tiny
         # - Order: up to 3 digits
         # - Depth: small integer
         # - Kind: e.g. "Module"
+        # - Phase: "Import"/"Runtime"
         # - Caller: "src/file.py:123"
         # - File: "src/experiment_configs.py"
         # - Function: "VisualizationConfig"
@@ -168,10 +170,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setColumnWidth(1, 40)   # Order (3 digits)
         self.left_tree.setColumnWidth(2, 40)   # Depth
         self.left_tree.setColumnWidth(3, 70)   # Kind
-        self.left_tree.setColumnWidth(4, 140)  # Caller
-        self.left_tree.setColumnWidth(5, 210)  # File
-        self.left_tree.setColumnWidth(6, 170)  # Function
-        self.left_tree.setColumnWidth(7, 60)   # Line/Mode
+        self.left_tree.setColumnWidth(4, 70)   # Phase
+        self.left_tree.setColumnWidth(5, 140)  # Caller
+        self.left_tree.setColumnWidth(6, 210)  # File
+        self.left_tree.setColumnWidth(7, 170)  # Function
+        self.left_tree.setColumnWidth(8, 60)   # Line/Mode
         # Enable a custom context menu so we can offer "Copy tree to clipboard"
         self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
@@ -323,34 +326,42 @@ class TraceViewerWidget(QtWidgets.QWidget):
         #   1: Order
         #   2: Depth
         #   3: Kind
-        #   4: Caller
-        #   5: File
-        #   6: Function
-        #   7: Line/Mode
+        #   4: Phase
+        #   5: Caller
+        #   6: File
+        #   7: Function
+        #   8: Line/Mode
         root_execution = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "", "Exec", "", "Function Execution Order", ""]
+            self.left_tree, ["", "", "", "Exec", "", "", "Function Execution Order", ""]
         )
         root_execution.setExpanded(True)
 
-        # Pre-compute caller strings for each function call based on depth.
+        # Pre-compute caller and phase for each function call based on depth and kind.
         caller_strings: List[str] = []
+        phase_strings: List[str] = []
         for i, call in enumerate(self._function_calls):
+            # Phase: simple heuristic based on kind.
+            if call.kind in ("Module", "Class"):
+                phase_strings.append("Import")
+            else:
+                phase_strings.append("Runtime")
+
             caller_str = ""
             # Look backwards for the most recent shallower-depth call.
             for j in range(i - 1, -1, -1):
                 prev = self._function_calls[j]
-                if prev.depth < call.depth:
+                if prev.depth &lt; call.depth:
                     # Use file:line for the caller.
                     caller_line = prev.line if prev.line else 0
                     # Avoid showing meaningless "0" line numbers.
-                    if prev.file and caller_line > 0:
+                    if prev.file and caller_line &gt; 0:
                         caller_str = f"{prev.file}:{caller_line}"
                     elif prev.file:
                         caller_str = prev.file
                     break
             caller_strings.append(caller_str)
 
-        for call, caller_str in zip(self._function_calls, caller_strings):
+        for call, caller_str, phase_str in zip(self._function_calls, caller_strings, phase_strings):
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
@@ -358,6 +369,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     str(call.index),          # Order
                     str(call.depth),          # Depth
                     call.kind,                # Kind
+                    phase_str,                # Phase ("Import" / "Runtime")
                     caller_str,               # Caller (inferred)
                     call.file,                # File
                     call.function,            # Function
@@ -368,7 +380,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, ("func", call))
 
         root_io = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "", "I/O", "", "External File I/O", ""]
+            self.left_tree, ["", "", "", "I/O", "", "", "External File I/O", ""]
         )
         root_io.setExpanded(True)
 
@@ -387,6 +399,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     str(fa.index),           # Order
                     "",                      # Depth (not applicable)
                     fa.mode,                 # Kind / mode
+                    "",                      # Phase (not applicable)
                     io_caller,               # Caller (I/O source)
                     fa.file_path,            # File
                     f"{fa.src_file}:{fa.src_func}",  # Function context
@@ -737,12 +750,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
           1: Order
           2: Depth
           3: Kind
-          4: Caller
-          5: File
-          6: Function
-          7: Line/Mode
+          4: Phase
+          5: Caller
+          6: File
+          7: Function
+          8: Line/Mode
         """
-        # Column 4 is the Caller column.
+        # Column 5 is the Caller column.
+        self.left_tree.setColumnHidden(5, not visible)
+
+    def set_phase_column_visible(self, visible: bool) -> None:
+        """
+        Show or hide the Phase column ("Import" vs "Runtime") in the left-hand tree.
+        """
+        # Column 4 is the Phase column.
         self.left_tree.setColumnHidden(4, not visible)
 
     def cleanup_threads(self):

@@ -42,6 +42,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_toggle_caller_column
         )
 
+        self.action_toggle_phase_column = QtWidgets.QAction(
+            "Show &Phase Column", self
+        )
+        self.action_toggle_phase_column.setCheckable(True)
+        # Default: Phase column off until explicitly enabled
+        self.action_toggle_phase_column.setChecked(False)
+        self.action_toggle_phase_column.toggled.connect(
+            self._on_toggle_phase_column
+        )
+
     def _create_menu(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self.action_open_codebase)
@@ -52,6 +62,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         config_menu = self.menuBar().addMenu("&Config")
         config_menu.addAction(self.action_toggle_caller_column)
+        config_menu.addAction(self.action_toggle_phase_column)
 
     # Slots ---------------------------------------------------------------
 
@@ -78,6 +89,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if hasattr(self.viewer, "set_caller_column_visible"):
             self.viewer.set_caller_column_visible(checked)
+
+    def _on_toggle_phase_column(self, checked: bool):
+        """
+        Toggle visibility of the Phase column ("Import" vs "Runtime") in the left-hand trace tree.
+        """
+        if hasattr(self.viewer, "set_phase_column_visible"):
+            self.viewer.set_phase_column_visible(checked)
 
     def closeEvent(self, event):
         """
