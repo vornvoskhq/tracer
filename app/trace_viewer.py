@@ -40,8 +40,14 @@ class CodeEditor(QsciScintilla):
         lexer = QsciLexerPython(self)
         self.setLexer(lexer)
 
-        # Line numbers
-        self.setMarginType(0, QsciScintilla.NumberMargin)
+        # Track the base (absolute) line number for the first line of the
+        # currently displayed code segment so that margin numbers can match
+        # the original file's line numbering.
+        self._base_line: int = 1
+
+        # Line numbers: use a text margin so we can control the starting
+        # line number (offset) instead of always starting at 1.
+        self.setMarginType(0, QsciScintilla.TextMargin)
         self.setMarginWidth(0, "0000")
         # Improve contrast of line numbers vs background
         self.setMarginsForegroundColor(QtCore.Qt.black)
@@ -57,8 +63,27 @@ class CodeEditor(QsciScintilla):
         # Always enable word wrap
         self.setWrapMode(QsciScintilla.WrapWord)
 
-    def set_code(self, code: str):
+    def _update_margin_line_numbers(self) -> None:
+        """
+        Update the margin text to reflect the current base line number.
+        """
+        # Clear and repopulate the margin text for each line.
+        lines = self.lines()
+        for i in range(lines):
+            # Absolute line number in the original file.
+            line_no = self._base_line + i
+            # Use style 0 for all margin text; this uses the default margin
+            # foreground/background colors configured on the editor.
+            self.setMarginText(i, str(line_no), 0)
+
+    def set_code(self, code: str, base_line: int = 1):
+        """
+        Set the editor contents and adjust the visible line numbers so that
+        they match the original file's line numbering, starting at base_line.
+        """
+        self._base_line = max(int(base_line), 1)
         self.setText(code)
+        self._update_margin_line_numbers()
         # Reset cursor to top
         self.setCursorPosition(0, 0)
 
@@ -117,11 +142,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setHeaderLabels(
             ["Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
         )
-        self.left_tree.setColumnWidth(0, 60)
+        # Make the Order column relatively narrow; we will also auto-resize it
+        # to contents after populating to avoid wasted space.
+        self.left_tree.setColumnWidth(0, 40)
         self.left_tree.setColumnWidth(1, 60)
         self.left_tree.setColumnWidth(2, 70)
         self.left_tree.setColumnWidth(3, 220)
         self.left_tree.setColumnWidth(4, 140)
+        # Enable a custom context menu so we can offer "Copy tree to clipboard"
+        self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
 
         # Bottom-left: summary area
@@ -142,8 +171,18 @@ class TraceViewerWidget(QtWidgets.QWidget):
         summary_layout.addWidget(self.summary_text, stretch=1)
         summary_layout.addWidget(self.summary_button, stretch=0)
 
-        # Right side: code editor
-        self.editor = CodeEditor(main_splitter)
+        # Right side: container with label + code editor
+        right_container = QtWidgets.QWidget(main_splitter)
+        right_layout = QtWidgets.QVBoxLayout(right_container)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+        right_layout.setSpacing(4)
+
+        self.editor_label = QtWidgets.QLabel("File: (none)", right_container)
+        self.editor_label.setStyleSheet("font-weight: bold;")
+        right_layout.addWidget(self.editor_label, stretch=0)
+
+        self.editor = CodeEditor(right_container)
+        right_layout.addWidget(self.editor, stretch=1)
 
         # Adjust splitter sizes: make summary vertically smaller
         main_splitter.setStretchFactor(0, 0)
@@ -153,6 +192,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
+        self.left_tree.customContextMenuRequested.connect(
+            self._on_left_tree_context_menu
+        )
         self.summary_button.clicked.connect(self._on_summarize_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
@@ -201,7 +243,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
         command = self._current_command
 
         self.left_tree.clear()
-        self.editor.set_code("")
+        # Reset editor to an empty buffer with line numbers starting at 1.
+        self.editor.set_code("", base_line=1)
+        if hasattr(self, "editor_label"):
+            self.editor_label.setText("File: (none)")
         self.summary_text.clear()
 
         self.left_tree.setDisabled(True)
@@ -228,6 +273,13 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._function_calls = function_calls
         self._file_accesses = file_accesses
 
+        # Normalize depths so the shallowest call starts at 0
+        if self._function_calls:
+            min_depth = min(fc.depth for fc in self._function_calls)
+            if min_depth != 0:
+                for fc in self._function_calls:
+                    fc.depth = max(fc.depth - min_depth, 0)
+
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
@@ -239,7 +291,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         )
         root_execution.setExpanded(True)
 
-        for call in function_calls:
+        for call in self._function_calls:
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
@@ -274,6 +326,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, ("io", fa))
 
         self.left_tree.expandAll()
+        # Make the Order column just wide enough for its contents
+        self.left_tree.resizeColumnToContents(0)
 
     def _on_trace_error(self, message: str):
         # Re-enable controls
@@ -285,20 +339,59 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Prefer console logging over GUI popups for trace errors
         print(f"[TraceViewerWidget] Trace failed: {message}")
 
-    def _on_left_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
+    def _on_left_tree_context_menu(self, pos: QtCore.QPoint):
+        """
+        Show a context menu on the left tree with options such as copying the
+        tree to the clipboard and opening the full source file in the right pane.
+        """
+        item = self.left_tree.itemAt(pos)
+        payload = item.data(0, QtCore.Qt.UserRole) if item is not None else None
+
+        menu = QtWidgets.QMenu(self.left_tree)
+        copy_action = menu.addAction("Copy tree to clipboard")
+        open_file_action = None
+        if payload:
+            open_file_action = menu.addAction("Open full file in right pane")
+
+        selected = menu.exec_(self.left_tree.viewport().mapToGlobal(pos))
+        if selected is copy_action:
+            self._copy_tree_to_clipboard()
+        elif open_file_action is not None and selected is open_file_action:
+            self._open_full_file_for_item(item)
+
+    def _open_full_file_for_item(self, item: QtWidgets.QTreeWidgetItem) -> None:
+        """
+        Open the entire source file corresponding to the given tree item in the
+        right-hand code editor, instead of a snippet.
+
+        For execution entries, this uses the function's file.
+        For I/O entries, this uses the caller's source file when available.
+        """
+        if self._current_codebase is None:
+            return
+
         payload = item.data(0, QtCore.Qt.UserRole)
         if not payload:
             return
 
         kind, obj = payload
-        if kind != "func":
+
+        # Determine which file and line to open based on item kind
+        if kind == "func":
+            call: FunctionCallView = obj
+            rel_path = call.file
+            target_line = call.line or 1
+        elif kind == "io":
+            fa: FileAccessView = obj
+            # Prefer the caller's source file for I/O entries
+            rel_path = fa.src_file or ""
+            target_line = fa.src_line or 1
+            if not rel_path:
+                return
+        else:
             return
 
-        call: FunctionCallView = obj
-        if self._current_codebase is None:
-            return
-
-        file_path = (self._current_codebase / call.file).resolve()
+        file_path = (self._current_codebase / rel_path).resolve()
         if not file_path.exists():
             QtWidgets.QMessageBox.warning(
                 self,
@@ -307,19 +400,171 @@ class TraceViewerWidget(QtWidgets.QWidget):
             )
             return
 
-        func_loc = find_enclosing_function(
-            file_path=file_path, line_number=call.line, function_name=call.function
-        )
-        if not func_loc:
-            # Fallback: show from the clicked line forward
-            code = extract_source_segment(file_path, call.line, call.line + 80)
-            self.editor.set_code(code)
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error Reading File",
+                f"Could not read file:\n{file_path}\n\nError: {exc}",
+            )
             return
 
-        code = extract_source_segment(
-            func_loc.file_path, func_loc.start_line, func_loc.end_line
-        )
-        self.editor.set_code(code)
+        # Show the entire file with line numbers starting at 1
+        self.editor.set_code(text, base_line=1)
+
+        # Position the cursor near the relevant line if we have one
+        if target_line > 0:
+            line_index = max(target_line - 1, 0)
+            self.editor.setCursorPosition(line_index, 0)
+
+        if hasattr(self, "editor_label"):
+            try:
+                rel_display = file_path.relative_to(self._current_codebase)
+            except ValueError:
+                rel_display = file_path
+            self.editor_label.setText(f"File: {rel_display}")
+
+    def _copy_tree_to_clipboard(self):
+        """
+        Copy the full contents of the left tree to the clipboard as
+        tab-separated text for easy sharing/analysis.
+        """
+        column_count = self.left_tree.columnCount()
+        if column_count <= 0:
+            return
+
+        header_item = self.left_tree.headerItem()
+        headers = [header_item.text(col) for col in range(column_count)]
+        lines = ["\t".join(headers)]
+
+        def visit(item: QtWidgets.QTreeWidgetItem, depth: int) -> None:
+            columns: List[str] = []
+            for col in range(column_count):
+                text = item.text(col)
+                # Indent the Kind column to reflect tree depth
+                if col == 2 and depth > 0:
+                    text = "  " * depth + text
+                # Ensure the Order column has no leading/trailing whitespace
+                if col == 0:
+                    text = text.strip()
+                columns.append(text)
+            lines.append("\t".join(columns))
+            for idx in range(item.childCount()):
+                visit(item.child(idx), depth + 1)
+
+        for i in range(self.left_tree.topLevelItemCount()):
+            root_item = self.left_tree.topLevelItem(i)
+            if root_item is not None:
+                visit(root_item, 0)
+
+        text = "\n".join(lines)
+        if not text.strip():
+            return
+
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(text)
+        print("[TraceViewerWidget] Copied left tree to clipboard")
+
+    def _on_left_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        payload = item.data(0, QtCore.Qt.UserRole)
+        if not payload:
+            return
+
+        kind, obj = payload
+        if self._current_codebase is None:
+            return
+
+        # Handle function execution entries
+        if kind == "func":
+            call: FunctionCallView = obj
+            file_path = (self._current_codebase / call.file).resolve()
+            if not file_path.exists():
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "File Not Found",
+                    f"Could not locate file:\n{file_path}",
+                )
+                return
+
+            func_loc = find_enclosing_function(
+                file_path=file_path, line_number=call.line, function_name=call.function
+            )
+            if not func_loc:
+                # Fallback: show a reasonable window around the clicked line
+                start_line = max(call.line - 5, 1)
+                end_line = call.line + 40
+                code = extract_source_segment(file_path, start_line, end_line)
+                # Align editor line numbers with the original file
+                self.editor.set_code(code, base_line=start_line)
+            else:
+                code = extract_source_segment(
+                    func_loc.file_path, func_loc.start_line, func_loc.end_line
+                )
+                # Start line numbers at the function's first line (including decorators)
+                self.editor.set_code(code, base_line=func_loc.start_line)
+
+            if hasattr(self, "editor_label"):
+                # Show the source file being displayed
+                rel_path = file_path
+                try:
+                    rel_path = file_path.relative_to(self._current_codebase)
+                except ValueError:
+                    pass
+                self.editor_label.setText(f"File: {rel_path}")
+            return
+
+        # Handle external I/O entries
+        if kind == "io":
+            fa: FileAccessView = obj
+            src_file = fa.src_file
+            src_line = fa.src_line
+            src_func = fa.src_func
+
+            if not src_file:
+                return
+
+            file_path = (self._current_codebase / src_file).resolve()
+            if not file_path.exists():
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "File Not Found",
+                    f"Could not locate file that performed I/O:\n{file_path}",
+                )
+                return
+
+            func_loc = None
+            if src_line:
+                func_loc = find_enclosing_function(
+                    file_path=file_path, line_number=src_line, function_name=src_func or None
+                )
+
+            if not func_loc and src_line:
+                # Fallback: show a window around the call site
+                start_line = max(src_line - 5, 1)
+                end_line = src_line + 40
+                code = extract_source_segment(file_path, start_line, end_line)
+                # Align editor line numbers with the original file
+                self.editor.set_code(code, base_line=start_line)
+            elif func_loc:
+                code = extract_source_segment(
+                    func_loc.file_path, func_loc.start_line, func_loc.end_line
+                )
+                # Start line numbers at the enclosing function's first line
+                self.editor.set_code(code, base_line=func_loc.start_line)
+            else:
+                # If we have neither a function location nor a line, just show the top of the file
+                code = extract_source_segment(file_path, 1, 80)
+                # Top of file: line numbers start at 1
+                self.editor.set_code(code, base_line=1)
+
+            if hasattr(self, "editor_label"):
+                try:
+                    rel_path = file_path.relative_to(self._current_codebase)
+                except ValueError:
+                    rel_path = file_path
+                self.editor_label.setText(f"File: {rel_path}")
+            return
 
     def _on_summarize_clicked(self):
         code = self.editor.text()
@@ -358,11 +603,18 @@ class TraceViewerWidget(QtWidgets.QWidget):
         """
         Stop background threads cleanly. Intended to be called on application exit.
 
-        As a precaution, this also prints basic debug information to the console
-        about any worker threads that were still running at shutdown time.
+        This prints debug information to the console about any worker threads
+        that were still running at shutdown time so that unexpected exits can
+        be diagnosed more easily.
         """
+        print("[TraceViewerWidget] cleanup_threads: starting thread cleanup")
+
         # Trace worker
         if self._trace_worker is not None:
+            print(
+                "[TraceViewerWidget] cleanup_threads: trace worker object present: "
+                f"{self._trace_worker!r}, isRunning={self._trace_worker.isRunning()}"
+            )
             if self._trace_worker.isRunning():
                 print(
                     "[TraceViewerWidget] cleanup_threads: trace worker still running, "
@@ -378,9 +630,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     "[TraceViewerWidget] cleanup_threads: trace worker exists but is not running."
                 )
             self._trace_worker = None
+        else:
+            print("[TraceViewerWidget] cleanup_threads: no trace worker to clean up")
 
         # LLM worker
         if self._llm_worker is not None:
+            print(
+                "[TraceViewerWidget] cleanup_threads: LLM worker object present: "
+                f"{self._llm_worker!r}, isRunning={self._llm_worker.isRunning()}"
+            )
             if self._llm_worker.isRunning():
                 print(
                     "[TraceViewerWidget] cleanup_threads: LLM worker still running, "
@@ -396,6 +654,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
                     "[TraceViewerWidget] cleanup_threads: LLM worker exists but is not running."
                 )
             self._llm_worker = None
+        else:
+            print("[TraceViewerWidget] cleanup_threads: no LLM worker to clean up")
+
+        print("[TraceViewerWidget] cleanup_threads: finished thread cleanup")
 
 
 class _TraceWorker(QtCore.QThread):
@@ -432,6 +694,38 @@ class _TraceWorker(QtCore.QThread):
                             depth=int(c.get("depth", 0) or 0),
                         )
                     )
+
+                # Re-normalize depths so that they reflect relative nesting
+                # within the traced call sequence rather than the raw stack
+                # depth (which can include frames we do not show in the UI).
+                if function_calls:
+                    raw_depths = [fc.depth for fc in function_calls]
+                    effective_depths: List[int] = []
+
+                    # Start the first call at depth 0.
+                    prev_eff = 0
+                    effective_depths.append(prev_eff)
+
+                    for i in range(1, len(raw_depths)):
+                        prev_raw = raw_depths[i - 1]
+                        curr_raw = raw_depths[i]
+                        delta = curr_raw - prev_raw
+
+                        if delta > 0:
+                            # Any increase moves one level deeper, regardless
+                            # of how many intermediate frames were present.
+                            prev_eff = prev_eff + 1
+                        elif delta == 0:
+                            # Same depth: stay at the current level.
+                            prev_eff = prev_eff
+                        else:
+                            # Decrease: move back up, but never below 0.
+                            prev_eff = max(prev_eff + delta, 0)
+
+                        effective_depths.append(prev_eff)
+
+                    for fc, eff in zip(function_calls, effective_depths):
+                        fc.depth = eff
             else:
                 # Fallback to call_sequence with or without line numbers
                 sequence_with_lines = getattr(trace, "call_sequence_with_lines", None)
