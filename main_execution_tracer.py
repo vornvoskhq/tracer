@@ -275,7 +275,7 @@ def trace_calls(frame, event, arg):
         TRACE_DATA["calls"].append(call_info)
         
         # Also store in sequence with line number for easy access
-        func_with_line = f"{rel_path}::{function_name}:{line_no}"
+        func_with_line = f"{{rel_path}}::{{function_name}}:{{line_no}}"
         TRACE_DATA["sequence_with_lines"] = TRACE_DATA.get("sequence_with_lines", [])
         TRACE_DATA["sequence_with_lines"].append(func_with_line)
         
