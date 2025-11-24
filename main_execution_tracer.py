@@ -222,6 +222,28 @@ def should_trace(filename, function_name):
     return False
 
 def trace_calls(frame, event, arg):
+    \"\"\"Main trace function.\"\"\"\r
+    global TRACE_DATA\r
+\r
+    if event not in ('call', 'return'):\r
+        return trace_calls\r
+\r
+    filename = frame.f_code.co_filename\r
+    function_name = frame.f_code.co_name\r
+    line_no = frame.f_lineno\r
+\r
+    # Depth tracking\r
+    if event == 'call':\r
+        TRACE_DATA[\"current_depth\"] += 1\r
+    elif event == 'return':\r
+        TRACE_DATA[\"current_depth\"] -= 1\r
+        if TRACE_DATA[\"current_depth\"] &lt; 0:\r
+            TRACE_DATA[\"current_depth\"] = 0\r
+        return trace_calls\r
+\r
+    # Only trace relevant files\r
+    if not should_trace(filename, function_name):\r
+        return trace_calls\rlls(frame, event, arg):
     \"\"\"Main trace function.\"\"\"
     global TRACE_DATA
 
@@ -237,11 +259,8 @@ def trace_calls(frame, event, arg):
         TRACE_DATA["current_depth"] += 1
     elif event == 'return':
         TRACE_DATA["current_depth"] -= 1
-        return trace_calls
-
-    # Limit depth
-    if TRACE_DATA["current_depth"] > 50:
-        TRACE_DATA["current_depth"] -= 1
+        if TRACE_DATA["current_depth"] < 0:
+            TRACE_DATA["current_depth"] = 0
         return trace_calls
 
     # Only trace relevant files

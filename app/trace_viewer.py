@@ -117,11 +117,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setHeaderLabels(
             ["Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
         )
-        self.left_tree.setColumnWidth(0, 60)
+        # Make the Order column relatively narrow; we will also auto-resize it
+        # to contents after populating to avoid wasted space.
+        self.left_tree.setColumnWidth(0, 40)
         self.left_tree.setColumnWidth(1, 60)
         self.left_tree.setColumnWidth(2, 70)
         self.left_tree.setColumnWidth(3, 220)
         self.left_tree.setColumnWidth(4, 140)
+        # Enable a custom context menu so we can offer "Copy tree to clipboard"
+        self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
 
         # Bottom-left: summary area
@@ -163,6 +167,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
+        self.left_tree.customContextMenuRequested.connect(
+            self._on_left_tree_context_menu
+        )
         self.summary_button.clicked.connect(self._on_summarize_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
@@ -240,6 +247,13 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._function_calls = function_calls
         self._file_accesses = file_accesses
 
+        # Normalize depths so the shallowest call starts at 0
+        if self._function_calls:
+            min_depth = min(fc.depth for fc in self._function_calls)
+            if min_depth != 0:
+                for fc in self._function_calls:
+                    fc.depth = max(fc.depth - min_depth, 0)
+
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
@@ -251,7 +265,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         )
         root_execution.setExpanded(True)
 
-        for call in function_calls:
+        for call in self._function_calls:
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
@@ -286,6 +300,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, ("io", fa))
 
         self.left_tree.expandAll()
+        # Make the Order column just wide enough for its contents
+        self.left_tree.resizeColumnToContents(0)
 
     def _on_trace_error(self, message: str):
         # Re-enable controls
@@ -296,6 +312,57 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Prefer console logging over GUI popups for trace errors
         print(f"[TraceViewerWidget] Trace failed: {message}")
+
+    def _on_left_tree_context_menu(self, pos: QtCore.QPoint):
+        """
+        Show a context menu on the left tree with a Copy-to-Clipboard option.
+        """
+        menu = QtWidgets.QMenu(self.left_tree)
+        copy_action = menu.addAction("Copy tree to clipboard")
+        selected = menu.exec_(self.left_tree.viewport().mapToGlobal(pos))
+        if selected is copy_action:
+            self._copy_tree_to_clipboard()
+
+    def _copy_tree_to_clipboard(self):
+        """
+        Copy the full contents of the left tree to the clipboard as
+        tab-separated text for easy sharing/analysis.
+        """
+        column_count = self.left_tree.columnCount()
+        if column_count <= 0:
+            return
+
+        header_item = self.left_tree.headerItem()
+        headers = [header_item.text(col) for col in range(column_count)]
+        lines = ["\t".join(headers)]
+
+        def visit(item: QtWidgets.QTreeWidgetItem, depth: int) -> None:
+            columns: List[str] = []
+            for col in range(column_count):
+                text = item.text(col)
+                # Indent the Kind column to reflect tree depth
+                if col == 2 and depth > 0:
+                    text = "  " * depth + text
+                # Ensure the Order column has no leading/trailing whitespace
+                if col == 0:
+                    text = text.strip()
+                columns.append(text)
+            lines.append("\t".join(columns))
+            for idx in range(item.childCount()):
+                visit(item.child(idx), depth + 1)
+
+        for i in range(self.left_tree.topLevelItemCount()):
+            root_item = self.left_tree.topLevelItem(i)
+            if root_item is not None:
+                visit(root_item, 0)
+
+        text = "\n".join(lines)
+        if not text.strip():
+            return
+
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(text)
+        print("[TraceViewerWidget] Copied left tree to clipboard")
 
     def _on_left_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
         payload = item.data(0, QtCore.Qt.UserRole)
