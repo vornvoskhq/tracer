@@ -2,8 +2,9 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import ast
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 
 from main_execution_tracer import MainExecutionTracer
@@ -18,6 +19,8 @@ class FunctionCallView:
     function: str
     line: int
     depth: int
+    kind: str  # "Func", "Class", or "Module"
+    is_entry: bool = False  # True for the inferred entrypoint call
 
 
 @dataclass
@@ -138,17 +141,41 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Combined function execution and file I/O tree
         self.left_tree = QtWidgets.QTreeWidget(top_left)
-        # Columns: Order, Depth, Kind, File, Function, Line/Mode
+        # Columns:
+        #   0: (indent)
+        #   1: Order
+        #   2: Depth
+        #   3: Kind
+        #   4: Phase  ("Import" vs "Runtime")
+        #   5: Caller (file:line)
+        #   6: File
+        #   7: Function
+        #   8: Line/Mode
+        # Column 0 is a narrow, mostly empty column that holds the tree
+        # indentation and expand/collapse icons so that the visible "Order"
+        # numbers in column 1 are not pushed to the right by tree padding.
         self.left_tree.setHeaderLabels(
-            ["Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
+            ["", "Order", "Depth", "Kind", "Phase", "Caller", "File", "Function", "Line/Mode"]
         )
-        # Make the Order column relatively narrow; we will also auto-resize it
-        # to contents after populating to avoid wasted space.
-        self.left_tree.setColumnWidth(0, 40)
-        self.left_tree.setColumnWidth(1, 60)
-        self.left_tree.setColumnWidth(2, 70)
-        self.left_tree.setColumnWidth(3, 220)
-        self.left_tree.setColumnWidth(4, 140)
+        # Approximate column widths based on expected content:
+        # - indent: tiny
+        # - Order: up to 3 digits
+        # - Depth: small integer
+        # - Kind: e.g. "Module"
+        # - Phase: "Import"/"Runtime"
+        # - Caller: "src/file.py:123"
+        # - File: "src/experiment_configs.py"
+        # - Function: "VisualizationConfig"
+        # - Line/Mode: 3-digit line or short mode
+        self.left_tree.setColumnWidth(0, 14)   # indent
+        self.left_tree.setColumnWidth(1, 40)   # Order (3 digits)
+        self.left_tree.setColumnWidth(2, 40)   # Depth
+        self.left_tree.setColumnWidth(3, 70)   # Kind
+        self.left_tree.setColumnWidth(4, 70)   # Phase
+        self.left_tree.setColumnWidth(5, 140)  # Caller
+        self.left_tree.setColumnWidth(6, 210)  # File
+        self.left_tree.setColumnWidth(7, 170)  # Function
+        self.left_tree.setColumnWidth(8, 60)   # Line/Mode
         # Enable a custom context menu so we can offer "Copy tree to clipboard"
         self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
@@ -192,6 +219,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
+        # Right-click context menu on the left tree
         self.left_tree.customContextMenuRequested.connect(
             self._on_left_tree_context_menu
         )
@@ -283,41 +311,118 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
+
+        # Ensure the worker thread has fully finished before dropping our
+        # reference to it, to avoid the QThread being destroyed while it is
+        # still running.
+        worker = self._trace_worker
+        if worker is not None:
+            if worker.isRunning():
+                worker.wait()
+            worker.deleteLater()
         self._trace_worker = None
 
-        # Populate tree with collapsible groups
+        # Populate tree with collapsible groups. Column layout:
+        #   0: (indent / tree controls)
+        #   1: Order
+        #   2: Depth
+        #   3: Kind
+        #   4: Phase
+        #   5: Caller
+        #   6: File
+        #   7: Function
+        #   8: Line/Mode
         root_execution = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "Exec", "Function Execution Order", "", ""]
+            self.left_tree, ["", "", "", "Exec", "", "", "Function Execution Order", ""]
         )
         root_execution.setExpanded(True)
 
-        for call in self._function_calls:
+        # Pre-compute caller and phase for each function call based on depth and kind.
+        caller_strings: List[str] = []
+        phase_strings: List[str] = []
+
+        # Infer a single entrypoint: first depth-0 call in the sequence.
+        entry_marked = False
+        for fc in self._function_calls:
+            fc.is_entry = False
+        for fc in self._function_calls:
+            if fc.depth == 0:
+                fc.is_entry = True
+                entry_marked = True
+                break
+
+        for i, call in enumerate(self._function_calls):
+            # Phase: simple heuristic based on kind, but always treat the
+            # inferred entrypoint as Runtime so it stands out from imports.
+            if call.is_entry:
+                phase_strings.append("Runtime")
+            elif call.kind in ("Module", "Class"):
+                phase_strings.append("Import")
+            else:
+                phase_strings.append("Runtime")
+
+            caller_str = ""
+            # Look backwards for the most recent shallower-depth call.
+            for j in range(i - 1, -1, -1):
+                prev = self._function_calls[j]
+                if prev.depth < call.depth:
+                    # Use file:line for the caller.
+                    caller_line = prev.line if prev.line else 0
+                    # Avoid showing meaningless "0" line numbers.
+                    if prev.file and caller_line > 0:
+                        caller_str = f"{prev.file}:{caller_line}"
+                    elif prev.file:
+                        caller_str = prev.file
+                    break
+            caller_strings.append(caller_str)
+
+        for call, caller_str, phase_str in zip(self._function_calls, caller_strings, phase_strings):
+            # Display a custom kind label for the inferred entrypoint.
+            kind_label = "Entry" if call.is_entry else call.kind
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
+                    "",                       # (indent only)
                     str(call.index),          # Order
                     str(call.depth),          # Depth
-                    "Func",                   # Kind
+                    kind_label,               # Kind
+                    phase_str,                # Phase ("Import" / "Runtime")
+                    caller_str,               # Caller (inferred)
                     call.file,                # File
                     call.function,            # Function
                     str(call.line),           # Line
                 ],
             )
+            if call.is_entry:
+                # Soft highlight for the entrypoint row.
+                entry_color = QtGui.QColor("#e8f4ff")
+                for col in range(0, 9):
+                    item.setBackground(col, entry_color)
             # Store metadata for click handling
             item.setData(0, QtCore.Qt.UserRole, ("func", call))
 
         root_io = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "I/O", "External File I/O", "", ""]
+            self.left_tree, ["", "", "", "I/O", "", "", "External File I/O", ""]
         )
         root_io.setExpanded(True)
 
         for fa in file_accesses:
+            # For I/O rows, use the recorded src_file:src_line as the caller.
+            if fa.src_file and fa.src_line:
+                io_caller = f"{fa.src_file}:{fa.src_line}"
+            elif fa.src_file:
+                io_caller = fa.src_file
+            else:
+                io_caller = ""
             item = QtWidgets.QTreeWidgetItem(
                 root_io,
                 [
+                    "",                       # (indent only)
                     str(fa.index),           # Order
                     "",                      # Depth (not applicable)
                     fa.mode,                 # Kind / mode
+                    "",                      # Phase (not applicable)
+                    io_caller,               # Caller (I/O source)
                     fa.file_path,            # File
                     f"{fa.src_file}:{fa.src_func}",  # Function context
                     str(fa.src_line) if fa.src_line else "",  # Line
@@ -327,13 +432,22 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.expandAll()
         # Make the Order column just wide enough for its contents
-        self.left_tree.resizeColumnToContents(0)
+        self.left_tree.resizeColumnToContents(1)
 
     def _on_trace_error(self, message: str):
         # Re-enable controls
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.run_button.setDisabled(False)
+
+        # Ensure the worker thread has fully finished before dropping our
+        # reference to it, to avoid the QThread being destroyed while it is
+        # still running.
+        worker = self._trace_worker
+        if worker is not None:
+            if worker.isRunning():
+                worker.wait()
+            worker.deleteLater()
         self._trace_worker = None
 
         # Prefer console logging over GUI popups for trace errors
@@ -342,7 +456,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
     def _on_left_tree_context_menu(self, pos: QtCore.QPoint):
         """
         Show a context menu on the left tree with options such as copying the
-        tree to the clipboard and opening the full source file in the right pane.
+        tree to the clipboard, opening the full source file in the right pane,
+        and showing the call stack for a given row.
         """
         item = self.left_tree.itemAt(pos)
         payload = item.data(0, QtCore.Qt.UserRole) if item is not None else None
@@ -350,14 +465,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
         menu = QtWidgets.QMenu(self.left_tree)
         copy_action = menu.addAction("Copy tree to clipboard")
         open_file_action = None
+        show_stack_action = None
+        # Only allow per-item actions when we actually have per-item metadata
+        # (i.e., real function or I/O rows), not on the group headers.
         if payload:
             open_file_action = menu.addAction("Open full file in right pane")
+            show_stack_action = menu.addAction("Show call stack for this row")
 
         selected = menu.exec_(self.left_tree.viewport().mapToGlobal(pos))
         if selected is copy_action:
             self._copy_tree_to_clipboard()
         elif open_file_action is not None and selected is open_file_action:
             self._open_full_file_for_item(item)
+        elif show_stack_action is not None and selected is show_stack_action:
+            self._show_call_stack_for_item(item)
 
     def _open_full_file_for_item(self, item: QtWidgets.QTreeWidgetItem) -> None:
         """
@@ -371,12 +492,21 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return
 
         payload = item.data(0, QtCore.Qt.UserRole)
+
+        # If a top-level group header (e.g., "Function Execution Order" or
+        # "External File I/O") is clicked, show the full file/module when
+        # possible instead of doing nothing.
         if not payload:
+            # For now we treat left-click on group headers as a no-op; the
+            # context menu "Open full file in right pane" covers the module-
+            # level display use case more explicitly.
             return
 
         kind, obj = payload
+        if self._current_codebase is None:
+            return
 
-        # Determine which file and line to open based on item kind
+        # Handle function execution entries
         if kind == "func":
             call: FunctionCallView = obj
             rel_path = call.file
@@ -442,11 +572,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
             columns: List[str] = []
             for col in range(column_count):
                 text = item.text(col)
-                # Indent the Kind column to reflect tree depth
-                if col == 2 and depth > 0:
+                # Indent the Kind column to reflect tree depth (column 3)
+                if col == 3 and depth > 0:
                     text = "  " * depth + text
-                # Ensure the Order column has no leading/trailing whitespace
-                if col == 0:
+                # Ensure the Order column (column 1) has no leading/trailing whitespace
+                if col == 1:
                     text = text.strip()
                 columns.append(text)
             lines.append("\t".join(columns))
@@ -466,6 +596,57 @@ class TraceViewerWidget(QtWidgets.QWidget):
         clipboard.setText(text)
         print("[TraceViewerWidget] Copied left tree to clipboard")
 
+    def _show_call_stack_for_item(self, item: QtWidgets.QTreeWidgetItem) -> None:
+        """
+        Show a simple call stack for the selected execution-row item, walking
+        back through the function_calls list using the depth information.
+        """
+        payload = item.data(0, QtCore.Qt.UserRole)
+        if not payload or payload[0] != "func":
+            return
+
+        _, call = payload
+        # Find the index of this call in our sequence (index is 1-based).
+        current_idx = max(int(call.index) - 1, 0)
+        if not (0 <= current_idx < len(self._function_calls)):
+            return
+
+        stack_indices: List[int] = [current_idx]
+        cur = current_idx
+        # Walk backwards, adding the most recent shallower-depth ancestor each time.
+        while True:
+            current_call = self._function_calls[cur]
+            found_ancestor = False
+            for j in range(cur - 1, -1, -1):
+                prev = self._function_calls[j]
+                if prev.depth < current_call.depth:
+                    stack_indices.append(j)
+                    cur = j
+                    found_ancestor = True
+                    break
+            if not found_ancestor:
+                break
+
+        # Build a human-readable stack from entry to the selected call.
+        lines: List[str] = []
+        for idx in reversed(stack_indices):
+            fc = self._function_calls[idx]
+            kind_label = "Entry" if fc.is_entry else fc.kind
+            label = f"{idx+1:4d}: {kind_label}  {fc.file}::{fc.function}"
+            if fc.line:
+                label += f" (line {fc.line})"
+            lines.append(label)
+
+        text = "\n".join(lines) if lines else "No call stack available."
+
+        dlg = QtWidgets.QMessageBox(self)
+        dlg.setWindowTitle("Call Stack")
+        dlg.setIcon(QtWidgets.QMessageBox.Information)
+        dlg.setText("Call stack (from entrypoint to selected row):")
+        dlg.setDetailedText(text)
+        dlg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        dlg.exec_()
+
     def _on_left_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
         payload = item.data(0, QtCore.Qt.UserRole)
         if not payload:
@@ -478,6 +659,45 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Handle function execution entries
         if kind == "func":
             call: FunctionCallView = obj
+
+            # Special-case module-level entries: show the full file in the
+            # right-hand editor instead of trying to extract a function span.
+            if call.function == "<module>":
+                file_path = (self._current_codebase / call.file).resolve()
+                if not file_path.exists():
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "File Not Found",
+                        f"Could not locate file:\n{file_path}",
+                    )
+                    return
+
+                try:
+                    text = file_path.read_text(encoding="utf-8")
+                except OSError as exc:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Error Reading File",
+                        f"Could not read file:\n{file_path}\n\nError: {exc}",
+                    )
+                    return
+
+                # Show full file starting at line 1
+                self.editor.set_code(text, base_line=1)
+
+                # Position the cursor near the call line, if we have one
+                if call.line > 0:
+                    line_index = max(call.line - 1, 0)
+                    self.editor.setCursorPosition(line_index, 0)
+
+                if hasattr(self, "editor_label"):
+                    try:
+                        rel_display = file_path.relative_to(self._current_codebase)
+                    except ValueError:
+                        rel_display = file_path
+                    self.editor_label.setText(f"File: {rel_display}")
+                return
+
             file_path = (self._current_codebase / call.file).resolve()
             if not file_path.exists():
                 QtWidgets.QMessageBox.warning(
@@ -599,65 +819,69 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_text.setPlainText(message)
         self._llm_worker = None
 
+    def set_caller_column_visible(self, visible: bool) -> None:
+        """
+        Show or hide the Caller column in the left-hand tree.
+
+        Column indices:
+          0: (indent)
+          1: Order
+          2: Depth
+          3: Kind
+          4: Phase
+          5: Caller
+          6: File
+          7: Function
+          8: Line/Mode
+        """
+        # Column 5 is the Caller column.
+        self.left_tree.setColumnHidden(5, not visible)
+
+    def set_phase_column_visible(self, visible: bool) -> None:
+        """
+        Show or hide the Phase column ("Import" vs "Runtime") in the left-hand tree.
+        """
+        # Column 4 is the Phase column.
+        self.left_tree.setColumnHidden(4, not visible)
+
+    def set_import_rows_hidden(self, hidden: bool) -> None:
+        """
+        Show or hide rows that belong to the import-time phase in the execution
+        tree. This operates on the Phase column value ("Import" / "Runtime").
+        """
+        # Phase column index
+        phase_col = 4
+        root = self.left_tree.invisibleRootItem()
+        stack = [root]
+        while stack:
+            parent = stack.pop()
+            for i in range(parent.childCount()):
+                child = parent.child(i)
+                stack.append(child)
+                phase_text = child.text(phase_col)
+                if phase_text == "Import":
+                    child.setHidden(hidden)
+
     def cleanup_threads(self):
         """
         Stop background threads cleanly. Intended to be called on application exit.
 
-        This prints debug information to the console about any worker threads
-        that were still running at shutdown time so that unexpected exits can
-        be diagnosed more easily.
+        This method now runs quietly unless there is actually work to do, so it
+        does not spam the console on every shutdown.
         """
-        print("[TraceViewerWidget] cleanup_threads: starting thread cleanup")
-
         # Trace worker
         if self._trace_worker is not None:
-            print(
-                "[TraceViewerWidget] cleanup_threads: trace worker object present: "
-                f"{self._trace_worker!r}, isRunning={self._trace_worker.isRunning()}"
-            )
             if self._trace_worker.isRunning():
-                print(
-                    "[TraceViewerWidget] cleanup_threads: trace worker still running, "
-                    "requesting quit() and waiting for it to exit..."
-                )
                 self._trace_worker.quit()
                 self._trace_worker.wait()
-                print(
-                    "[TraceViewerWidget] cleanup_threads: trace worker exited cleanly."
-                )
-            else:
-                print(
-                    "[TraceViewerWidget] cleanup_threads: trace worker exists but is not running."
-                )
             self._trace_worker = None
-        else:
-            print("[TraceViewerWidget] cleanup_threads: no trace worker to clean up")
 
         # LLM worker
         if self._llm_worker is not None:
-            print(
-                "[TraceViewerWidget] cleanup_threads: LLM worker object present: "
-                f"{self._llm_worker!r}, isRunning={self._llm_worker.isRunning()}"
-            )
             if self._llm_worker.isRunning():
-                print(
-                    "[TraceViewerWidget] cleanup_threads: LLM worker still running, "
-                    "requesting quit() and waiting for it to exit..."
-                )
                 self._llm_worker.quit()
                 self._llm_worker.wait()
-                print(
-                    "[TraceViewerWidget] cleanup_threads: LLM worker exited cleanly."
-                )
-            else:
-                print(
-                    "[TraceViewerWidget] cleanup_threads: LLM worker exists but is not running."
-                )
             self._llm_worker = None
-        else:
-            print("[TraceViewerWidget] cleanup_threads: no LLM worker to clean up")
-
-        print("[TraceViewerWidget] cleanup_threads: finished thread cleanup")
 
 
 class _TraceWorker(QtCore.QThread):
@@ -677,6 +901,94 @@ class _TraceWorker(QtCore.QThread):
             function_calls: List[FunctionCallView] = []
             file_accesses: List[FileAccessView] = []
 
+            # Simple classification cache to avoid reparsing the same file
+            ast_cache: Dict[Path, ast.AST] = {}
+            class_names_cache: Dict[Path, set] = {}
+
+            def classify_kind(file_rel: str, func_name: str, line_no: int) -> str:
+                """
+                Classify the kind of call for UI purposes:
+
+                  - "Module" for <module> entries
+                  - "Class"  for class bodies AND constructor calls
+                  - "Func"   otherwise
+
+                A call is treated as "Class" if either:
+                  * the enclosing AST node is a ClassDef, or
+                  * the function name matches a class defined in the file.
+                """
+                if func_name == "<module>":
+                    return "Module"
+
+                if not file_rel:
+                    return "Func"
+
+                file_path = (self._codebase / file_rel).resolve()
+                if not file_path.exists():
+                    return "Func"
+
+                # Load and cache the AST and class names for this file
+                tree = ast_cache.get(file_path)
+                if tree is None:
+                    try:
+                        source = file_path.read_text(encoding="utf-8")
+                        tree = ast.parse(source, filename=str(file_path))
+                    except Exception:
+                        return "Func"
+                    ast_cache[file_path] = tree
+
+                    # Collect class names defined in this file for constructor classification
+                    names = set()
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ClassDef):
+                            names.add(node.name)
+                    class_names_cache[file_path] = names
+
+                class_names = class_names_cache.get(file_path, set())
+
+                # If the function name matches a class name in the file, treat it
+                # as a Class call (constructor) even if the enclosing node is not
+                # directly the class body.
+                if func_name in class_names:
+                    return "Class"
+
+                # If we have no line information, we cannot refine further.
+                if not line_no:
+                    return "Func"
+
+                best_node = None
+                best_span: Optional[int] = None  # length of span (end - start)
+
+                for node in ast.walk(tree):
+                    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        continue
+
+                    start = getattr(node, "lineno", None)
+                    if start is None:
+                        continue
+
+                    end = getattr(node, "end_lineno", None)
+                    if not isinstance(end, int):
+                        # Fallback: approximate by taking the max child lineno
+                        max_line = start
+                        for child in ast.walk(node):
+                            child_line = getattr(child, "lineno", None)
+                            if isinstance(child_line, int) and child_line > max_line:
+                                max_line = child_line
+                        end = max_line
+
+                    if not (start <= line_no <= end):
+                        continue
+
+                    span = end - start
+                    if best_node is None or span < (best_span if best_span is not None else span + 1):
+                        best_node = node
+                        best_span = span
+
+                if isinstance(best_node, ast.ClassDef):
+                    return "Class"
+                return "Func"
+
             # Build function execution order from full call records if available
             calls_raw: List[Dict[str, Any]] = getattr(trace, "calls", []) or []
             if calls_raw:
@@ -685,13 +997,18 @@ class _TraceWorker(QtCore.QThread):
                     # Filter out lambda functions
                     if func_name == "<lambda>":
                         continue
+                    file_rel = c.get("file", "")
+                    line_no = int(c.get("line", 0) or 0)
+                    depth = int(c.get("depth", 0) or 0)
+                    kind = classify_kind(file_rel, func_name, line_no)
                     function_calls.append(
                         FunctionCallView(
                             index=idx,
-                            file=c.get("file", ""),
+                            file=file_rel,
                             function=func_name,
-                            line=int(c.get("line", 0) or 0),
-                            depth=int(c.get("depth", 0) or 0),
+                            line=line_no,
+                            depth=depth,
+                            kind=kind,
                         )
                     )
 
@@ -746,6 +1063,7 @@ class _TraceWorker(QtCore.QThread):
                         if func_name == "<lambda>":
                             continue
 
+                        kind = classify_kind(file_part, func_name, line_no)
                         function_calls.append(
                             FunctionCallView(
                                 index=idx,
@@ -753,6 +1071,7 @@ class _TraceWorker(QtCore.QThread):
                                 function=func_name,
                                 line=line_no,
                                 depth=0,
+                                kind=kind,
                             )
                         )
                 else:
@@ -766,6 +1085,7 @@ class _TraceWorker(QtCore.QThread):
                         if func_name == "<lambda>":
                             continue
 
+                        kind = classify_kind(file_part, func_name, 0)
                         function_calls.append(
                             FunctionCallView(
                                 index=idx,
@@ -773,10 +1093,11 @@ class _TraceWorker(QtCore.QThread):
                                 function=func_name,
                                 line=0,
                                 depth=0,
+                                kind=kind,
                             )
                         )
 
-            # External file I/O with filtering
+            # External file I/O with filtering (unchanged)
             file_accesses_raw: List[Dict[str, Any]] = getattr(trace, "file_accesses", []) or []
             for idx, fa in enumerate(file_accesses_raw, start=1):
                 file_path = fa.get("file", "") or ""

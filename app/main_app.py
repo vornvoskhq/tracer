@@ -31,13 +31,48 @@ class MainWindow(QtWidgets.QMainWindow):
         # can perform thread cleanup before the application exits.
         self.action_quit.triggered.connect(self.close)
 
+        # Config menu actions
+        self.action_toggle_caller_column = QtWidgets.QAction(
+            "Show &Caller Column", self
+        )
+        self.action_toggle_caller_column.setCheckable(True)
+        self.action_toggle_caller_column.setChecked(True)
+        # Toggle visibility of the Caller column in the trace viewer
+        self.action_toggle_caller_column.toggled.connect(
+            self._on_toggle_caller_column
+        )
+
+        self.action_toggle_phase_column = QtWidgets.QAction(
+            "Show &Phase Column", self
+        )
+        self.action_toggle_phase_column.setCheckable(True)
+        # Default: Phase column off until explicitly enabled
+        self.action_toggle_phase_column.setChecked(False)
+        self.action_toggle_phase_column.toggled.connect(
+            self._on_toggle_phase_column
+        )
+
+        self.action_toggle_import_rows = QtWidgets.QAction(
+            "Hide &Import-time Calls", self
+        )
+        self.action_toggle_import_rows.setCheckable(True)
+        self.action_toggle_import_rows.setChecked(False)
+        self.action_toggle_import_rows.toggled.connect(
+            self._on_toggle_import_rows
+        )
+
     def _create_menu(self):
-        menu = self.menuBar().addMenu("&File")
-        menu.addAction(self.action_open_codebase)
-        menu.addSeparator()
-        menu.addAction(self.action_run_trace)
-        menu.addSeparator()
-        menu.addAction(self.action_quit)
+        file_menu = self.menuBar().addMenu("&File")
+        file_menu.addAction(self.action_open_codebase)
+        file_menu.addSeparator()
+        file_menu.addAction(self.action_run_trace)
+        file_menu.addSeparator()
+        file_menu.addAction(self.action_quit)
+
+        config_menu = self.menuBar().addMenu("&Config")
+        config_menu.addAction(self.action_toggle_caller_column)
+        config_menu.addAction(self.action_toggle_phase_column)
+        config_menu.addAction(self.action_toggle_import_rows)
 
     # Slots ---------------------------------------------------------------
 
@@ -57,6 +92,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_run_trace(self):
         self.viewer.run_trace()
+
+    def _on_toggle_caller_column(self, checked: bool):
+        """
+        Toggle visibility of the Caller column in the left-hand trace tree.
+        """
+        if hasattr(self.viewer, "set_caller_column_visible"):
+            self.viewer.set_caller_column_visible(checked)
+
+    def _on_toggle_phase_column(self, checked: bool):
+        """
+        Toggle visibility of the Phase column ("Import" vs "Runtime") in the left-hand trace tree.
+        """
+        if hasattr(self.viewer, "set_phase_column_visible"):
+            self.viewer.set_phase_column_visible(checked)
+
+    def _on_toggle_import_rows(self, checked: bool):
+        """
+        Hide or show import-time calls in the execution tree.
+        """
+        if hasattr(self.viewer, "set_import_rows_hidden"):
+            self.viewer.set_import_rows_hidden(checked)
 
     def closeEvent(self, event):
         """
@@ -88,14 +144,10 @@ def main():
         """
         Slot invoked when QApplication is about to quit.
 
-        This is a last-chance hook to ensure worker threads are cleaned up and
-        to emit diagnostics about the shutdown path.
+        This is a last-chance hook to ensure worker threads are cleaned up.
         """
-        print("[Execution Trace Viewer] QApplication.aboutToQuit: beginning shutdown, cleaning up worker threads...")
         if hasattr(win, "viewer") and hasattr(win.viewer, "cleanup_threads"):
             win.viewer.cleanup_threads()
-        else:
-            print("[Execution Trace Viewer] QApplication.aboutToQuit: no viewer/cleanup_threads available.")
 
     # Ensure background worker threads are cleaned up even if the application
     # is quit via mechanisms other than closing the main window directly.
