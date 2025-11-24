@@ -265,13 +265,13 @@ def trace_calls(frame, event, arg):
         TRACE_DATA["sequence"].append(func_key)
         
         # Store call details with line number
-        call_info = {
+        call_info = {{
             "function": function_name,
             "file": rel_path,
             "line": line_no,
             "timestamp": time.time() - TRACE_DATA["start_time"],
             "depth": TRACE_DATA["current_depth"]
-        }
+        }}
         TRACE_DATA["calls"].append(call_info)
         
         # Also store in sequence with line number for easy access
