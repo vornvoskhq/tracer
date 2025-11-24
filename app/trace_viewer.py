@@ -72,7 +72,9 @@ class CodeEditor(QsciScintilla):
         for i in range(lines):
             # Absolute line number in the original file.
             line_no = self._base_line + i
-            self.setMarginText(i, str(line_no))
+            # Use style 0 for all margin text; this uses the default margin
+            # foreground/background colors configured on the editor.
+            self.setMarginText(i, str(line_no), 0)
 
     def set_code(self, code: str, base_line: int = 1):
         """
