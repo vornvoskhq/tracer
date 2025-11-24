@@ -341,13 +341,89 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _on_left_tree_context_menu(self, pos: QtCore.QPoint):
         """
-        Show a context menu on the left tree with a Copy-to-Clipboard option.
+        Show a context menu on the left tree with options such as copying the
+        tree to the clipboard and opening the full source file in the right pane.
         """
+        item = self.left_tree.itemAt(pos)
+        payload = item.data(0, QtCore.Qt.UserRole) if item is not None else None
+
         menu = QtWidgets.QMenu(self.left_tree)
         copy_action = menu.addAction("Copy tree to clipboard")
+        open_file_action = None
+        if payload:
+            open_file_action = menu.addAction("Open full file in right pane")
+
         selected = menu.exec_(self.left_tree.viewport().mapToGlobal(pos))
         if selected is copy_action:
             self._copy_tree_to_clipboard()
+        elif open_file_action is not None and selected is open_file_action:
+            self._open_full_file_for_item(item)
+
+    def _open_full_file_for_item(self, item: QtWidgets.QTreeWidgetItem) -> None:
+        """
+        Open the entire source file corresponding to the given tree item in the
+        right-hand code editor, instead of a snippet.
+
+        For execution entries, this uses the function's file.
+        For I/O entries, this uses the caller's source file when available.
+        """
+        if self._current_codebase is None:
+            return
+
+        payload = item.data(0, QtCore.Qt.UserRole)
+        if not payload:
+            return
+
+        kind, obj = payload
+
+        # Determine which file and line to open based on item kind
+        if kind == "func":
+            call: FunctionCallView = obj
+            rel_path = call.file
+            target_line = call.line or 1
+        elif kind == "io":
+            fa: FileAccessView = obj
+            # Prefer the caller's source file for I/O entries
+            rel_path = fa.src_file or ""
+            target_line = fa.src_line or 1
+            if not rel_path:
+                return
+        else:
+            return
+
+        file_path = (self._current_codebase / rel_path).resolve()
+        if not file_path.exists():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "File Not Found",
+                f"Could not locate file:\n{file_path}",
+            )
+            return
+
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error Reading File",
+                f"Could not read file:\n{file_path}\n\nError: {exc}",
+            )
+            return
+
+        # Show the entire file with line numbers starting at 1
+        self.editor.set_code(text, base_line=1)
+
+        # Position the cursor near the relevant line if we have one
+        if target_line > 0:
+            line_index = max(target_line - 1, 0)
+            self.editor.setCursorPosition(line_index, 0)
+
+        if hasattr(self, "editor_label"):
+            try:
+                rel_display = file_path.relative_to(self._current_codebase)
+            except ValueError:
+                rel_display = file_path
+            self.editor_label.setText(f"File: {rel_display}")
 
     def _copy_tree_to_clipboard(self):
         """
@@ -618,6 +694,38 @@ class _TraceWorker(QtCore.QThread):
                             depth=int(c.get("depth", 0) or 0),
                         )
                     )
+
+                # Re-normalize depths so that they reflect relative nesting
+                # within the traced call sequence rather than the raw stack
+                # depth (which can include frames we do not show in the UI).
+                if function_calls:
+                    raw_depths = [fc.depth for fc in function_calls]
+                    effective_depths: List[int] = []
+
+                    # Start the first call at depth 0.
+                    prev_eff = 0
+                    effective_depths.append(prev_eff)
+
+                    for i in range(1, len(raw_depths)):
+                        prev_raw = raw_depths[i - 1]
+                        curr_raw = raw_depths[i]
+                        delta = curr_raw - prev_raw
+
+                        if delta > 0:
+                            # Any increase moves one level deeper, regardless
+                            # of how many intermediate frames were present.
+                            prev_eff = prev_eff + 1
+                        elif delta == 0:
+                            # Same depth: stay at the current level.
+                            prev_eff = prev_eff
+                        else:
+                            # Decrease: move back up, but never below 0.
+                            prev_eff = max(prev_eff + delta, 0)
+
+                        effective_depths.append(prev_eff)
+
+                    for fc, eff in zip(function_calls, effective_depths):
+                        fc.depth = eff
             else:
                 # Fallback to call_sequence with or without line numbers
                 sequence_with_lines = getattr(trace, "call_sequence_with_lines", None)
