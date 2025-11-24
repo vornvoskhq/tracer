@@ -66,10 +66,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def main():
+    # Basic global exception hook to log uncaught errors before exiting.
+    def _excepthook(exc_type, exc_value, exc_traceback):
+        import traceback
+
+        print("\n[Execution Trace Viewer] Unhandled exception in main thread:")
+        traceback.print_exception(exc_type, exc_value, exc_traceback)
+        # Delegate to the default handler as well so Qt / Python can do their normal shutdown.
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = _excepthook
+
     app = QtWidgets.QApplication(sys.argv)
     win = MainWindow()
     win.show()
-    sys.exit(app.exec_())
+    exit_code = app.exec_()
+    print(f"[Execution Trace Viewer] Application exiting with code {exit_code}")
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

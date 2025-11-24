@@ -351,15 +351,44 @@ class TraceViewerWidget(QtWidgets.QWidget):
     def cleanup_threads(self):
         """
         Stop background threads cleanly. Intended to be called on application exit.
+
+        As a precaution, this also prints basic debug information to the console
+        about any worker threads that were still running at shutdown time.
         """
-        if self._trace_worker is not None and self._trace_worker.isRunning():
-            self._trace_worker.quit()
-            self._trace_worker.wait()
+        # Trace worker
+        if self._trace_worker is not None:
+            if self._trace_worker.isRunning():
+                print(
+                    "[TraceViewerWidget] cleanup_threads: trace worker still running, "
+                    "requesting quit() and waiting for it to exit..."
+                )
+                self._trace_worker.quit()
+                self._trace_worker.wait()
+                print(
+                    "[TraceViewerWidget] cleanup_threads: trace worker exited cleanly."
+                )
+            else:
+                print(
+                    "[TraceViewerWidget] cleanup_threads: trace worker exists but is not running."
+                )
             self._trace_worker = None
 
-        if self._llm_worker is not None and self._llm_worker.isRunning():
-            self._llm_worker.quit()
-            self._llm_worker.wait()
+        # LLM worker
+        if self._llm_worker is not None:
+            if self._llm_worker.isRunning():
+                print(
+                    "[TraceViewerWidget] cleanup_threads: LLM worker still running, "
+                    "requesting quit() and waiting for it to exit..."
+                )
+                self._llm_worker.quit()
+                self._llm_worker.wait()
+                print(
+                    "[TraceViewerWidget] cleanup_threads: LLM worker exited cleanly."
+                )
+            else:
+                print(
+                    "[TraceViewerWidget] cleanup_threads: LLM worker exists but is not running."
+                )
             self._llm_worker = None
 
 
