@@ -138,17 +138,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Combined function execution and file I/O tree
         self.left_tree = QtWidgets.QTreeWidget(top_left)
-        # Columns: Order, Depth, Kind, File, Function, Line/Mode
+        # Columns: (indent), Order, Depth, Kind, File, Function, Line/Mode
+        # Column 0 is a narrow, mostly empty column that holds the tree
+        # indentation and expand/collapse icons so that the visible "Order"
+        # numbers in column 1 are not pushed to the right by tree padding.
         self.left_tree.setHeaderLabels(
-            ["Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
+            ["", "Order", "Depth", "Kind", "File", "Function", "Line/Mode"]
         )
-        # Make the Order column relatively narrow; we will also auto-resize it
-        # to contents after populating to avoid wasted space.
-        self.left_tree.setColumnWidth(0, 40)
-        self.left_tree.setColumnWidth(1, 60)
-        self.left_tree.setColumnWidth(2, 70)
-        self.left_tree.setColumnWidth(3, 220)
-        self.left_tree.setColumnWidth(4, 140)
+        # Make the indent column very narrow and the Order column small
+        self.left_tree.setColumnWidth(0, 18)
+        self.left_tree.setColumnWidth(1, 50)
+        self.left_tree.setColumnWidth(2, 60)
+        self.left_tree.setColumnWidth(3, 70)
+        self.left_tree.setColumnWidth(4, 220)
+        self.left_tree.setColumnWidth(5, 140)
         # Enable a custom context menu so we can offer "Copy tree to clipboard"
         self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
@@ -285,9 +288,16 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.run_button.setDisabled(False)
         self._trace_worker = None
 
-        # Populate tree with collapsible groups
+        # Populate tree with collapsible groups. Column layout:
+        #   0: (indent / tree controls)
+        #   1: Order
+        #   2: Depth
+        #   3: Kind
+        #   4: File
+        #   5: Function
+        #   6: Line/Mode
         root_execution = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "Exec", "Function Execution Order", "", ""]
+            self.left_tree, ["", "", "", "Exec", "Function Execution Order", "", ""]
         )
         root_execution.setExpanded(True)
 
@@ -295,6 +305,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item = QtWidgets.QTreeWidgetItem(
                 root_execution,
                 [
+                    "",                       # (indent only)
                     str(call.index),          # Order
                     str(call.depth),          # Depth
                     "Func",                   # Kind
@@ -307,7 +318,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, ("func", call))
 
         root_io = QtWidgets.QTreeWidgetItem(
-            self.left_tree, ["", "", "I/O", "External File I/O", "", ""]
+            self.left_tree, ["", "", "", "I/O", "External File I/O", "", ""]
         )
         root_io.setExpanded(True)
 
@@ -315,6 +326,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
             item = QtWidgets.QTreeWidgetItem(
                 root_io,
                 [
+                    "",                       # (indent only)
                     str(fa.index),           # Order
                     "",                      # Depth (not applicable)
                     fa.mode,                 # Kind / mode
@@ -327,7 +339,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.expandAll()
         # Make the Order column just wide enough for its contents
-        self.left_tree.resizeColumnToContents(0)
+        self.left_tree.resizeColumnToContents(1)
 
     def _on_trace_error(self, message: str):
         # Re-enable controls
@@ -371,12 +383,21 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return
 
         payload = item.data(0, QtCore.Qt.UserRole)
+
+        # If a top-level group header (e.g., "Function Execution Order" or
+        # "External File I/O") is clicked, show the full file/module when
+        # possible instead of doing nothing.
         if not payload:
+            # For now we treat left-click on group headers as a no-op; the
+            # context menu "Open full file in right pane" covers the module-
+            # level display use case more explicitly.
             return
 
         kind, obj = payload
+        if self._current_codebase is None:
+            return
 
-        # Determine which file and line to open based on item kind
+        # Handle function execution entries
         if kind == "func":
             call: FunctionCallView = obj
             rel_path = call.file
@@ -442,11 +463,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
             columns: List[str] = []
             for col in range(column_count):
                 text = item.text(col)
-                # Indent the Kind column to reflect tree depth
-                if col == 2 and depth > 0:
+                # Indent the Kind column to reflect tree depth (column 3)
+                if col == 3 and depth > 0:
                     text = "  " * depth + text
-                # Ensure the Order column has no leading/trailing whitespace
-                if col == 0:
+                # Ensure the Order column (column 1) has no leading/trailing whitespace
+                if col == 1:
                     text = text.strip()
                 columns.append(text)
             lines.append("\t".join(columns))

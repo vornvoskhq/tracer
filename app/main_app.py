@@ -88,14 +88,10 @@ def main():
         """
         Slot invoked when QApplication is about to quit.
 
-        This is a last-chance hook to ensure worker threads are cleaned up and
-        to emit diagnostics about the shutdown path.
+        This is a last-chance hook to ensure worker threads are cleaned up.
         """
-        print("[Execution Trace Viewer] QApplication.aboutToQuit: beginning shutdown, cleaning up worker threads...")
         if hasattr(win, "viewer") and hasattr(win.viewer, "cleanup_threads"):
             win.viewer.cleanup_threads()
-        else:
-            print("[Execution Trace Viewer] QApplication.aboutToQuit: no viewer/cleanup_threads available.")
 
     # Ensure background worker threads are cleaned up even if the application
     # is quit via mechanisms other than closing the main window directly.
