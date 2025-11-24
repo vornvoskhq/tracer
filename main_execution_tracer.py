@@ -580,6 +580,9 @@ if __name__ == "__main__":
                 success=success
             )
             
+            # Attach full call list for detailed reporting
+            execution_trace.calls = trace_data.get('calls', [])
+            
             # Add line number sequence if available
             if 'sequence_with_lines' in trace_data:
                 execution_trace.call_sequence_with_lines = trace_data['sequence_with_lines']
@@ -619,72 +622,31 @@ def format_trace_report(trace: ExecutionTrace, detailed: bool = False) -> str:
     output.append(f"📊 {trace.command} - {trace.duration:.1f}s - {trace.total_calls} calls, {trace.unique_functions} functions, {trace.unique_files} files")
     output.append("")
     
-    # Main focus: Execution Order
-    if trace.call_sequence:
-        if detailed:
-            # Show detailed call sequence (all calls, not just unique)
-            output.append(f"📞 Complete Call Sequence (showing all {len(trace.call_sequence)} calls):")
-            for i, call in enumerate(trace.call_sequence):
-                output.append(f"  {i+1:4d}. {call}")
-        else:
-            # Show execution order with line numbers
-            output.append("📞 Function Execution Order:")
-            seen_functions = set()
-            execution_order = []
-            
-            # Use call sequence with line numbers if available, otherwise fall back to regular sequence
-            sequence_to_use = getattr(trace, 'call_sequence_with_lines', trace.call_sequence)
-            
-            for call in sequence_to_use:
-                # Extract function name without line number for uniqueness check
-                if "::" in call and ":" in call.split("::")[-1]:
-                    # Format: file::function:line -> extract file::function
-                    func_without_line = "::".join(call.split("::")[:-1]) + "::" + call.split("::")[-1].split(":")[0]
-                else:
-                    func_without_line = call
-                
-                if func_without_line not in seen_functions:
-                    seen_functions.add(func_without_line)
-                    execution_order.append(call)
-                    if len(execution_order) >= 100:  # Show first 100 unique functions
-                        break
-            
-            for i, call in enumerate(execution_order):
-                # Format the display: extract line number if present
-                if "::" in call and ":" in call.split("::")[-1]:
-                    parts = call.split("::")
-                    if len(parts) == 2:
-                        file_part = parts[0]
-                        func_line_part = parts[1]
-                        if ":" in func_line_part:
-                            func_name, line_num = func_line_part.split(":", 1)
-                            output.append(f"  {i+1:3d}. {file_part}::{func_name} (line {line_num})")
-                        else:
-                            output.append(f"  {i+1:3d}. {call}")
-                    else:
-                        output.append(f"  {i+1:3d}. {call}")
-                else:
-                    output.append(f"  {i+1:3d}. {call}")
-            
-            remaining_unique = len(set([call.split(":")[0] if ":" in call.split("::")[-1] else call for call in sequence_to_use])) - len(execution_order)
-            if remaining_unique > 0:
-                output.append(f"  ... and {remaining_unique} more unique functions")
+    # Main focus: Execution Order as a table (no truncation)
+    calls = getattr(trace, "calls", None)
+    if calls:
+        output.append("📞 Function Execution Order (Call Order, Depth, File, Function, Line):")
+        # Header
+        output.append("CallOrder\tDepth\tFile\tFunction\tLine")
+        for idx, call in enumerate(calls, start=1):
+            file_name = call.get("file", "")
+            func_name = call.get("function", "")
+            line_no = call.get("line", "")
+            depth = call.get("depth", 0)
+            output.append(f"{idx}\t{depth}\t{file_name}\t{func_name}\t{line_no}")
         output.append("")
     
-    # File access summary
-    if trace.files_opened:
-        output.append("📁 Files Accessed:")
-        sorted_files = sorted(trace.files_opened.items(), key=lambda x: x[1], reverse=True)
-        for file_path, count in sorted_files:
-            output.append(f"  {count:2d}x - {file_path}")
-        output.append("")
-    
-    # Compact Python file summary (only if not detailed)
-    if not detailed and trace.file_usage:
-        output.append("🐍 Python Files Used:")
-        sorted_files = sorted(trace.file_usage.items(), key=lambda x: x[1], reverse=True)
-        for file_path, count in sorted_files:
-            output.append(f"  {count:4d} - {file_path}")
+    # External file I/O events (text, config, pickle, images, etc.)
+    file_accesses = getattr(trace, "file_accesses", None)
+    if file_accesses:
+        output.append("📁 External File I/O Events (Order, Time(s), Access Type, Mode, File):")
+        output.append("Order\tTime(s)\tAccessType\tMode\tFile")
+        for idx, access in enumerate(file_accesses, start=1):
+            ts = access.get("timestamp", 0.0)
+            access_type = access.get("access_type", "")
+            mode = access.get("mode", "")
+            file_path = access.get("file", "")
+            output.append(f"{idx}\t{ts:.3f}\t{access_type}\t{mode}\t{file_path}")
         output.append("")
     
     return "\n".join(output)
