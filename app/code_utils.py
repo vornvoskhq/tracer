@@ -42,13 +42,29 @@ def find_enclosing_function(
             self._maybe_update_best(node)
             self.generic_visit(node)
 
+        def visit_ClassDef(self, node: ast.ClassDef):  # type: ignore[override]
+            # Also consider classes (e.g., @dataclass) as code regions we might
+            # want to display when they are the primary enclosing construct.
+            self._maybe_update_best(node)
+            self.generic_visit(node)
+
         def _maybe_update_best(self, node):
             nonlocal best_match
+
             start = getattr(node, "lineno", None)
             end = getattr(node, "end_lineno", None)
-
             if start is None or end is None:
                 return
+
+            # Include decorators if present so that @dataclass and similar
+            # decorators are part of the displayed region.
+            decorator_lines = [
+                getattr(dec, "lineno", None)
+                for dec in getattr(node, "decorator_list", []) or []
+                if getattr(dec, "lineno", None) is not None
+            ]
+            if decorator_lines:
+                start = min([start] + decorator_lines)
 
             if not (start <= line_number <= end):
                 return
@@ -56,13 +72,14 @@ def find_enclosing_function(
             # Prefer more specific (smaller) spans
             span = end - start
             if best_match is None or span < (best_match[2] - best_match[1]):
-                if function_name and getattr(node, "name", None) != function_name:
+                node_name = getattr(node, "name", None) or ""
+                if function_name and node_name != function_name:
                     # If function_name is given and doesn't match, still keep
                     # this as a candidate, but only if we don't have any match yet.
                     if best_match is None:
-                        best_match = (node.name, start, end)
+                        best_match = (node_name, start, end)
                 else:
-                    best_match = (node.name, start, end)
+                    best_match = (node_name, start, end)
 
     FuncVisitor().visit(tree)
 
