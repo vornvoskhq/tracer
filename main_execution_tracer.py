@@ -459,8 +459,9 @@ if __name__ == "__main__":
         Trace VGMini command with proper main execution.
         """
         print(f"🔍 Tracing: {command}")
-        # Compact startup summary to avoid verbose output
-        print(f"📁 {self.codebase_name} | entry: {self.entry_point} | python: {self.target_python}")
+        # Compact startup summary: show codebase folder and entry point location
+        # Emphasize that the target directory was auto-detected correctly.
+        print(f"📁 target/{self.codebase_name} | entry: {self.entry_point}")
         
         # Parse command
         cmd_parts = command.strip().split()
