@@ -10,6 +10,7 @@ from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 from main_execution_tracer import MainExecutionTracer
 from .code_utils import find_enclosing_function, extract_source_segment
 from .llm_client import OpenRouterClient
+from .llm_config_store import load_llm_config, save_llm_config
 
 
 @dataclass
@@ -100,7 +101,62 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._function_calls: List[FunctionCallView] = []
         self._file_accesses: List[FileAccessView] = []
 
+        # LLM client and configuration
         self._llm_client = OpenRouterClient()
+        self._llm_model_override: Optional[str] = None
+        self._llm_max_tokens: Optional[int] = None
+        self._llm_temperature: float = 0.1
+        self._llm_prompt_template: Optional[str] = None
+
+        # LLM configuration (loaded from llm_config.json when available)
+        self._llm_config: Dict[str, Any] = load_llm_config()
+        self._llm_presets: Dict[str, Dict[str, str]] = self._llm_config.get("presets", {}) or {}
+
+        default_preset_id = self._llm_config.get("default_prompt_preset")
+        if not default_preset_id or default_preset_id not in self._llm_presets:
+            # Fallback to first preset ID if config is missing or invalid
+            default_preset_id = next(iter(self._llm_presets.keys())) if self._llm_presets else None
+        self._llm_current_preset_id: Optional[str] = default_preset_id
+
+        # Verbose logging flag controls whether prompts/responses are written
+        # in detail to the LLM log file. Default is False to keep logs compact.
+        self._llm_verbose_logging: bool = bool(self._llm_config.get("verbose_logging", False))
+
+        # UI state: splitter sizes and dialog sizes may be stored in config under
+        # a top-level "ui" key. We keep a local copy and apply it once the UI
+        # widgets are constructed.
+        self._ui_state: Dict[str, Any] = dict(self._llm_config.get("ui", {}) or {})
+
+        # Initialize overrides from config
+        config_model = self._llm_config.get("model")
+        if isinstance(config_model, str) and config_model:
+            self._llm_model_override = config_model
+
+        config_temp = self._llm_config.get("temperature")
+        if isinstance(config_temp, (int, float)):
+            self._llm_temperature = float(config_temp)
+
+        config_max_tokens = self._llm_config.get("max_tokens")
+        if isinstance(config_max_tokens, int):
+            self._llm_max_tokens = config_max_tokens
+
+        # Pick the current prompt template from the selected preset if available
+        if self._llm_current_preset_id and self._llm_current_preset_id in self._llm_presets:
+            self._llm_prompt_template = self._llm_presets[self._llm_current_preset_id].get("template")
+
+        # Apply initial configuration to the LLM client
+        if self._llm_model_override:
+            self._llm_client.model = self._llm_model_override
+        if self._llm_prompt_template:
+            self._llm_client.prompt_template = self._llm_prompt_template
+        if self._llm_max_tokens is not None:
+            self._llm_client.max_tokens = self._llm_max_tokens
+        self._llm_client.temperature = float(self._llm_temperature or 0.1)
+
+        # Track last-used LLM context for building summary headers
+        self._last_llm_kind: Optional[str] = None  # "function" or "path"
+        self._last_llm_model: Optional[str] = None
+        self._last_llm_preset_id: Optional[str] = None
 
         # Background workers
         self._trace_worker: Optional[_TraceWorker] = None
@@ -113,14 +169,16 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _build_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)
-        main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
-        main_layout.addWidget(main_splitter)
+
+        # Main horizontal splitter: left (trees + summary) vs right (code editor)
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
+        main_layout.addWidget(self.main_splitter)
 
         # Left side: vertical split (top: controls + execution + I/O, bottom: summary)
-        left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, main_splitter)
+        self.left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self.main_splitter)
 
         # Top-left container: codebase label, command row, combined function execution and file I/O
-        top_left = QtWidgets.QWidget(left_splitter)
+        top_left = QtWidgets.QWidget(self.left_splitter)
         top_left_layout = QtWidgets.QVBoxLayout(top_left)
         top_left_layout.setContentsMargins(4, 4, 4, 4)
         top_left_layout.setSpacing(4)
@@ -181,25 +239,49 @@ class TraceViewerWidget(QtWidgets.QWidget):
         top_left_layout.addWidget(self.left_tree, stretch=1)
 
         # Bottom-left: summary area
-        summary_container = QtWidgets.QWidget(left_splitter)
+        summary_container = QtWidgets.QWidget(self.left_splitter)
         summary_layout = QtWidgets.QVBoxLayout(summary_container)
         summary_layout.setContentsMargins(4, 4, 4, 4)
         summary_layout.setSpacing(4)
 
         self.summary_label = QtWidgets.QLabel("LLM Summary", summary_container)
         self.summary_label.setStyleSheet("font-weight: bold;")
-        self.summary_text = QtWidgets.QPlainTextEdit(summary_container)
+        # Use a rich-text editor so that Markdown coming back from the LLM
+        # (e.g. headings, bullet lists, code blocks) is easier to read.
+        self.summary_text = QtWidgets.QTextEdit(summary_container)
         self.summary_text.setReadOnly(True)
         self.summary_button = QtWidgets.QPushButton(
             "Summarize Highlighted Function", summary_container
         )
+        self.summary_path_button = QtWidgets.QPushButton(
+            "Summarize Execution Path", summary_container
+        )
+        self.summary_entrypoints_button = QtWidgets.QPushButton(
+            "Suggest Entry Points", summary_container
+        )
+        self.summary_config_button = QtWidgets.QToolButton(summary_container)
+        self.summary_config_button.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView)
+        )
+        self.summary_config_button.setToolTip("Open LLM Summary Settings")
 
         summary_layout.addWidget(self.summary_label)
         summary_layout.addWidget(self.summary_text, stretch=1)
-        summary_layout.addWidget(self.summary_button, stretch=0)
+
+        # Place all LLM actions on a single horizontal row to minimize vertical
+        # space and make the primary actions equally visible.
+        buttons_row = QtWidgets.QHBoxLayout()
+        buttons_row.setContentsMargins(0, 0, 0, 0)
+        buttons_row.setSpacing(6)
+        buttons_row.addWidget(self.summary_button)
+        buttons_row.addWidget(self.summary_path_button)
+        buttons_row.addWidget(self.summary_entrypoints_button)
+        buttons_row.addStretch(1)
+        buttons_row.addWidget(self.summary_config_button)
+        summary_layout.addLayout(buttons_row)
 
         # Right side: container with label + code editor
-        right_container = QtWidgets.QWidget(main_splitter)
+        right_container = QtWidgets.QWidget(self.main_splitter)
         right_layout = QtWidgets.QVBoxLayout(right_container)
         right_layout.setContentsMargins(4, 4, 4, 4)
         right_layout.setSpacing(4)
@@ -211,11 +293,21 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.editor = CodeEditor(right_container)
         right_layout.addWidget(self.editor, stretch=1)
 
-        # Adjust splitter sizes: make summary vertically smaller
-        main_splitter.setStretchFactor(0, 0)
-        main_splitter.setStretchFactor(1, 1)
-        left_splitter.setStretchFactor(0, 5)
-        left_splitter.setStretchFactor(1, 1)
+        # Adjust splitter sizes: make summary vertically smaller. If we have
+        # persisted sizes in the config, prefer those over the default stretch
+        # factors so that the layout is restored across runs.
+        if self._ui_state:
+            main_sizes = self._ui_state.get("main_splitter_sizes")
+            if isinstance(main_sizes, list) and all(isinstance(x, int) for x in main_sizes):
+                self.main_splitter.setSizes(main_sizes)
+            left_sizes = self._ui_state.get("left_splitter_sizes")
+            if isinstance(left_sizes, list) and all(isinstance(x, int) for x in left_sizes):
+                self.left_splitter.setSizes(left_sizes)
+        else:
+            self.main_splitter.setStretchFactor(0, 0)
+            self.main_splitter.setStretchFactor(1, 1)
+            self.left_splitter.setStretchFactor(0, 5)
+            self.left_splitter.setStretchFactor(1, 1)
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
@@ -224,6 +316,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
             self._on_left_tree_context_menu
         )
         self.summary_button.clicked.connect(self._on_summarize_clicked)
+        self.summary_path_button.clicked.connect(self._on_summarize_path_clicked)
+        self.summary_entrypoints_button.clicked.connect(self._on_suggest_entrypoints_clicked)
+        self.summary_config_button.clicked.connect(self._on_llm_config_button_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
     # Public API ----------------------------------------------------------
@@ -279,6 +374,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.setDisabled(True)
         self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
         self.run_button.setDisabled(True)
 
         worker = _TraceWorker(codebase, command)
@@ -310,6 +407,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
+        self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
         self.run_button.setDisabled(False)
 
         # Ensure the worker thread has fully finished before dropping our
@@ -438,6 +537,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Re-enable controls
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
+        self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
         self.run_button.setDisabled(False)
 
         # Ensure the worker thread has fully finished before dropping our
@@ -642,8 +743,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
         dlg = QtWidgets.QMessageBox(self)
         dlg.setWindowTitle("Call Stack")
         dlg.setIcon(QtWidgets.QMessageBox.Information)
-        dlg.setText("Call stack (from entrypoint to selected row):")
-        dlg.setDetailedText(text)
+        # Show the entire call stack directly in the main text so there is no
+        # extra click required to reveal the details.
+        dlg.setText(text or "No call stack available.")
         dlg.setStandardButtons(QtWidgets.QMessageBox.Ok)
         dlg.exec_()
 
@@ -786,6 +888,100 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 self.editor_label.setText(f"File: {rel_path}")
             return
 
+    def _apply_llm_overrides(self) -> None:
+        """
+        Apply the current UI/config LLM overrides to the client instance.
+        """
+        if self._llm_model_override:
+            self._llm_client.model = self._llm_model_override
+        self._llm_client.max_tokens = self._llm_max_tokens
+        self._llm_client.temperature = float(self._llm_temperature or 0.1)
+        if self._llm_prompt_template:
+            self._llm_client.prompt_template = self._llm_prompt_template
+
+    def _build_path_context(self) -> Optional[str]:
+        """
+        Build a textual representation of the current execution path suitable
+        for feeding into the LLM prompt {code} placeholder.
+
+        We include a brief instruction asking the model to be concise so that
+        responses are more likely to fit within the configured token budget.
+        """
+        if not self._function_calls:
+            return None
+
+        lines: List[str] = []
+        lines.append(
+            "Instruction: Provide a concise, high-level summary of this execution "
+            "path that fits within the response token budget. Avoid repetition "
+            "and unnecessary detail."
+        )
+        lines.append("")
+        lines.append("Execution call path (in order):")
+        for fc in self._function_calls:
+            label = f"{fc.file}::{fc.function}" if fc.file else fc.function
+            if fc.line:
+                label += f" (line {fc.line})"
+            label += f" depth={fc.depth}"
+            lines.append(f"  {fc.index:4d}. {label}")
+
+        return "\n".join(lines)
+
+    def _build_entrypoints_context(self) -> Optional[str]:
+        """
+        Build a context string listing Python files in the current codebase and
+        short snippets from each, suitable for the entrypoints preset.
+        """
+        if self._current_codebase is None:
+            return None
+
+        base = self._current_codebase
+        py_files_raw = list(base.rglob("*.py"))
+        # Filter out virtualenvs and common third-party / stdlib-style directories
+        py_files = []
+        skip_fragments = ("/.venv/", "\\\\.venv\\\\", "site-packages", "/lib/python", "\\\\Lib\\\\")
+        for path in py_files_raw:
+            path_str = str(path)
+            if any(fragment in path_str for fragment in skip_fragments):
+                continue
+            py_files.append(path)
+
+        if not py_files:
+            return None
+
+        max_files = 30
+        max_lines_per_file = 80
+        max_total_chars = 20000
+
+        lines: List[str] = []
+        lines.append(f"Codebase: {base.name}")
+        lines.append("Collected Python file snippets (limited sample):")
+
+        total_chars = 0
+        for idx, path in enumerate(py_files):
+            if idx >= max_files:
+                lines.append("... (additional files omitted for brevity) ...")
+                break
+            try:
+                rel = path.relative_to(base)
+            except ValueError:
+                rel = path
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+
+            snippet_lines = text.splitlines()[:max_lines_per_file]
+            snippet = "\n".join(snippet_lines)
+            block = f"\n### {rel}\n```python\n{snippet}\n```"
+            if total_chars + len(block) > max_total_chars:
+                lines.append("... (truncated due to size limits) ...")
+                break
+            lines.append(block)
+            total_chars += len(block)
+
+        return "\n".join(lines)
+
     def _on_summarize_clicked(self):
         code = self.editor.text()
         if not code.strip():
@@ -797,13 +993,125 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return
 
         self.summary_button.setDisabled(True)
-        self.summary_text.setPlainText("Requesting summary from OpenRouter...")
+        self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
+        self.summary_text.setMarkdown("Requesting summary from OpenRouter...")
 
         if self._llm_worker is not None and self._llm_worker.isRunning():
             # Avoid starting multiple concurrent LLM requests
             return
 
-        worker = _LLMSummaryWorker(code, self._llm_client)
+        # Apply any overrides from the settings dialog to the LLM client.
+        self._apply_llm_overrides()
+
+        # Remember context for headers and logging
+        self._last_llm_kind = "function"
+        self._last_llm_model = self._llm_client.model
+        self._last_llm_preset_id = self._llm_current_preset_id
+
+        meta: Dict[str, Any] = {}
+        if self._current_codebase is not None:
+            meta["codebase"] = self._current_codebase.name
+        if self._current_command:
+            meta["command"] = self._current_command
+        meta["kind"] = "function"
+        meta["verbose_logging"] = bool(getattr(self, "_llm_verbose_logging", False))
+
+        worker = _LLMSummaryWorker(code, self._llm_client, self._last_llm_preset_id, meta)
+        worker.finished_with_result.connect(self._on_summary_finished)
+        worker.error_occurred.connect(self._on_summary_error)
+        self._llm_worker = worker
+        worker.start()
+
+    def _on_summarize_path_clicked(self):
+        context = self._build_path_context()
+        if not context:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Trace",
+                "There is no execution path to summarize. Run a trace first.",
+            )
+            return
+
+        self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
+        self.summary_text.setMarkdown("Requesting path summary from OpenRouter...")
+
+        if self._llm_worker is not None and self._llm_worker.isRunning():
+            # Avoid starting multiple concurrent LLM requests
+            return
+
+        # Apply any overrides from the settings dialog to the LLM client.
+        self._apply_llm_overrides()
+
+        # For path summaries, allow a larger completion budget: use twice the
+        # configured max_tokens if one is set, otherwise leave as-is.
+        if self._llm_max_tokens is not None and self._llm_max_tokens > 0:
+            self._llm_client.max_tokens = self._llm_max_tokens * 2
+
+        # Remember context for headers and logging
+        self._last_llm_kind = "path"
+        self._last_llm_model = self._llm_client.model
+        self._last_llm_preset_id = self._llm_current_preset_id
+
+        meta: Dict[str, Any] = {}
+        if self._current_codebase is not None:
+            meta["codebase"] = self._current_codebase.name
+        if self._current_command:
+            meta["command"] = self._current_command
+        meta["kind"] = "path"
+        meta["verbose_logging"] = bool(getattr(self, "_llm_verbose_logging", False))
+
+        worker = _LLMSummaryWorker(context, self._llm_client, self._last_llm_preset_id, meta)
+        worker.finished_with_result.connect(self._on_summary_finished)
+        worker.error_occurred.connect(self._on_summary_error)
+        self._llm_worker = worker
+        worker.start()
+
+    def _on_suggest_entrypoints_clicked(self):
+        context = self._build_entrypoints_context()
+        if not context:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Python Files",
+                "No Python files were found in the current codebase.",
+            )
+            return
+
+        self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
+        self.summary_text.setMarkdown("Requesting entrypoint suggestions from OpenRouter...")
+
+        if self._llm_worker is not None and self._llm_worker.isRunning():
+            # Avoid starting multiple concurrent LLM requests
+            return
+
+        # Apply any overrides from the settings dialog to the LLM client.
+        self._apply_llm_overrides()
+
+        # For this action, prefer the dedicated 'entrypoints' preset if available,
+        # without changing the user's default preset selection.
+        preset_id = "entrypoints" if "entrypoints" in self._llm_presets else self._llm_current_preset_id
+        if preset_id and preset_id in self._llm_presets:
+            tmpl = self._llm_presets[preset_id].get("template") or self._llm_client.prompt_template
+            self._llm_client.prompt_template = tmpl
+
+        # Remember context for headers and logging
+        self._last_llm_kind = "entrypoints"
+        self._last_llm_model = self._llm_client.model
+        self._last_llm_preset_id = preset_id
+
+        meta: Dict[str, Any] = {}
+        if self._current_codebase is not None:
+            meta["codebase"] = self._current_codebase.name
+        if self._current_command:
+            meta["command"] = self._current_command
+        meta["kind"] = "entrypoints"
+        meta["verbose_logging"] = bool(getattr(self, "_llm_verbose_logging", False))
+
+        worker = _LLMSummaryWorker(context, self._llm_client, preset_id, meta)
         worker.finished_with_result.connect(self._on_summary_finished)
         worker.error_occurred.connect(self._on_summary_error)
         self._llm_worker = worker
@@ -811,11 +1119,33 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _on_summary_finished(self, text: str):
         self.summary_button.setDisabled(False)
-        self.summary_text.setPlainText(text)
+        self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
+
+        # Build a small header describing what was summarized and with which settings.
+        if self._last_llm_kind == "function":
+            kind_label = "Function"
+        elif self._last_llm_kind == "path":
+            kind_label = "Path"
+        elif self._last_llm_kind:
+            kind_label = self._last_llm_kind.capitalize()
+        else:
+            kind_label = "LLM"
+
+        model = self._last_llm_model or self._llm_client.model
+        preset = self._last_llm_preset_id or "-"
+        header = f"**[{kind_label}]** `model={model}` `preset={preset}`"
+
+        # Treat the body as Markdown so headings, lists, and code blocks are rendered.
+        combined = f"{header}\n\n{text}"
+        self.summary_text.setMarkdown(combined)
         self._llm_worker = None
 
     def _on_summary_error(self, message: str):
         self.summary_button.setDisabled(False)
+        self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
+        # Errors are simple text; render them as-is.
         self.summary_text.setPlainText(message)
         self._llm_worker = None
 
@@ -882,6 +1212,90 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 self._llm_worker.quit()
                 self._llm_worker.wait()
             self._llm_worker = None
+
+    def save_ui_state(self) -> None:
+        """
+        Persist current splitter sizes and verbose logging flag into llm_config.json.
+        """
+        config = dict(self._llm_config or {})
+        config["verbose_logging"] = bool(self._llm_verbose_logging)
+
+        ui_state = dict(self._ui_state or {})
+        if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
+            try:
+                ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
+                ui_state["left_splitter_sizes"] = self.left_splitter.sizes()
+            except Exception:
+                pass
+        config["ui"] = ui_state
+
+        save_llm_config(config)
+        self._llm_config = config
+        self._ui_state = ui_state
+
+    def _on_llm_config_button_clicked(self) -> None:
+        """
+        Open the LLM Summary Settings dialog via the parent main window.
+        """
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_on_llm_settings"):
+            try:
+                parent._on_llm_settings()
+            except Exception:
+                pass
+
+    def persist_llm_settings(
+        self,
+        model: Optional[str],
+        max_tokens: Optional[int],
+        temperature: float,
+        preset_id: Optional[str],
+        prompt_template: str,
+    ) -> None:
+        """
+        Update in-memory LLM settings and persist them to llm_config.json.
+        """
+        if model:
+            self._llm_model_override = model
+        else:
+            self._llm_model_override = None
+
+        self._llm_max_tokens = max_tokens
+        self._llm_temperature = float(temperature)
+        self._llm_prompt_template = prompt_template or None
+
+        if preset_id and preset_id in self._llm_presets:
+            self._llm_current_preset_id = preset_id
+            # Update the preset's template with any edits from the dialog
+            self._llm_presets[preset_id]["template"] = prompt_template
+
+        # Build config object for saving
+        config = dict(self._llm_config or {})
+        if self._llm_model_override:
+            config["model"] = self._llm_model_override
+        if self._llm_max_tokens is not None:
+            config["max_tokens"] = int(self._llm_max_tokens)
+        else:
+            config["max_tokens"] = None
+        config["temperature"] = float(self._llm_temperature)
+        if self._llm_current_preset_id:
+            config["default_prompt_preset"] = self._llm_current_preset_id
+        config["presets"] = self._llm_presets
+
+        # Preserve existing UI and verbose logging settings.
+        config["verbose_logging"] = bool(self._llm_verbose_logging)
+        ui_state = dict(self._ui_state or {})
+        # Capture current splitter sizes so the layout is restored on next run.
+        if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
+            try:
+                ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
+                ui_state["left_splitter_sizes"] = self.left_splitter.sizes()
+            except Exception:
+                pass
+        config["ui"] = ui_state
+
+        save_llm_config(config)
+        self._llm_config = config
 
 
 class _TraceWorker(QtCore.QThread):
@@ -1023,6 +1437,62 @@ class _TraceWorker(QtCore.QThread):
                     fc.index = new_index
                 return reordered
 
+            def _inject_entrypoint_row(calls: List[FunctionCallView]) -> List[FunctionCallView]:
+                """
+                Insert a synthetic entrypoint row at the top of the execution order.
+
+                This ensures that the GUI always shows the detected entry script
+                (e.g. vgmini.py) as the first row, even when no function calls are
+                recorded from that file (for example when it only imports and
+                delegates into src/ modules).
+                """
+                entry_point = getattr(tracer, "entry_point", None)
+                if not entry_point or not calls:
+                    return calls
+
+                entry_name = Path(entry_point).name
+
+                # Try to reuse an existing call from the entrypoint module if we have one.
+                existing_idx = None
+                for i, fc in enumerate(calls):
+                    if Path(fc.file).name == entry_name:
+                        existing_idx = i
+                        break
+
+                new_calls: List[FunctionCallView] = []
+
+                if existing_idx is not None:
+                    # Use the earliest recorded call from the entrypoint module as the root.
+                    entry_call = calls[existing_idx]
+                    entry_call.index = 1
+                    entry_call.depth = 0
+                    new_calls.append(entry_call)
+
+                    remaining = calls[:existing_idx] + calls[existing_idx + 1 :]
+                    for new_index, fc in enumerate(remaining, start=2):
+                        fc.index = new_index
+                        fc.depth = max(fc.depth + 1, 0)
+                        new_calls.append(fc)
+                    return new_calls
+
+                # Otherwise, synthesize a module-level entry row.
+                synthetic = FunctionCallView(
+                    index=1,
+                    file=entry_point,
+                    function="<module>",
+                    line=0,
+                    depth=0,
+                    kind="Module",
+                )
+                new_calls.append(synthetic)
+
+                for new_index, fc in enumerate(calls, start=2):
+                    fc.index = new_index
+                    fc.depth = max(fc.depth + 1, 0)
+                    new_calls.append(fc)
+
+                return new_calls
+
             # Build function execution order from full call records if available
             calls_raw: List[Dict[str, Any]] = getattr(trace, "calls", []) or []
             if calls_raw:
@@ -1134,6 +1604,10 @@ class _TraceWorker(QtCore.QThread):
             # Re-order so the entrypoint module appears first in the execution order.
             function_calls = _reorder_by_entrypoint(function_calls)
 
+            # Inject an explicit entrypoint row so the GUI always shows the
+            # entry script (e.g. vgmini.py) as the root of execution.
+            function_calls = _inject_entrypoint_row(function_calls)
+
             # External file I/O with filtering (unchanged)
             file_accesses_raw: List[Dict[str, Any]] = getattr(trace, "file_accesses", []) or []
             for idx, fa in enumerate(file_accesses_raw, start=1):
@@ -1167,19 +1641,30 @@ class _LLMSummaryWorker(QtCore.QThread):
     finished_with_result = QtCore.pyqtSignal(str)
     error_occurred = QtCore.pyqtSignal(str)
 
-    def __init__(self, code: str, client: OpenRouterClient):
+    def __init__(
+        self,
+        code: str,
+        client: OpenRouterClient,
+        preset_id: Optional[str],
+        meta: Optional[Dict[str, Any]],
+    ):
         super().__init__()
         self._code = code
         self._client = client
+        self._preset_id = preset_id
+        self._meta = meta or {}
 
     def run(self):
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                text = loop.run_until_complete(self._client.summarize_function(self._code))
+                text = loop.run_until_complete(
+                    self._client.summarize_function(self._code, preset_id=self._preset_id, meta=self._meta)
+                )
             finally:
                 loop.close()
             self.finished_with_result.emit(text)
         except Exception as exc:
+            # Ensure we always emit a signal so the QThread can shut down cleanly.
             self.error_occurred.emit(str(exc))

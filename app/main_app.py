@@ -1,7 +1,8 @@
 import sys
 from pathlib import Path
+from typing import Optional
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from .trace_viewer import TraceViewerWidget
 
@@ -66,6 +67,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_toggle_import_rows
         )
 
+        # LLM settings dialog
+        self.action_llm_settings = QtWidgets.QAction("LLM &Summary Settings...", self)
+        self.action_llm_settings.triggered.connect(self._on_llm_settings)
+
+        # Verbose LLM logging toggle
+        self.action_llm_verbose_logging = QtWidgets.QAction("Verbose &LLM Logging", self)
+        self.action_llm_verbose_logging.setCheckable(True)
+        if hasattr(self, "viewer") and hasattr(self.viewer, "_llm_verbose_logging"):
+            self.action_llm_verbose_logging.setChecked(bool(self.viewer._llm_verbose_logging))
+        self.action_llm_verbose_logging.toggled.connect(self._on_toggle_llm_verbose_logging)
+
     def _create_menu(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self.action_open_codebase)
@@ -78,6 +90,9 @@ class MainWindow(QtWidgets.QMainWindow):
         config_menu.addAction(self.action_toggle_caller_column)
         config_menu.addAction(self.action_toggle_phase_column)
         config_menu.addAction(self.action_toggle_import_rows)
+        config_menu.addSeparator()
+        config_menu.addAction(self.action_llm_settings)
+        config_menu.addAction(self.action_llm_verbose_logging)
 
     # Slots ---------------------------------------------------------------
 
@@ -118,6 +133,276 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if hasattr(self.viewer, "set_import_rows_hidden"):
             self.viewer.set_import_rows_hidden(checked)
+
+    def _on_toggle_llm_verbose_logging(self, checked: bool):
+        """
+        Toggle verbose LLM logging (whether to include full file contents in logs).
+        """
+        if hasattr(self.viewer, "_llm_verbose_logging"):
+            self.viewer._llm_verbose_logging = bool(checked)
+        # Update config via the viewer helper so it is persisted.
+        if hasattr(self.viewer, "save_ui_state"):
+            self.viewer.save_ui_state()
+
+    def _on_llm_settings(self):
+        """
+        Open a dialog allowing the user to configure LLM summary settings.
+        """
+        if not hasattr(self.viewer, "_llm_client"):
+            return
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("LLM Summary Settings")
+
+        # Restore last dialog size if we have one stored in config.
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        ui_state = cfg.get("ui") or {}
+        dlg_size = ui_state.get("llm_dialog_size")
+        if isinstance(dlg_size, list) and len(dlg_size) == 2:
+            try:
+                w, h = int(dlg_size[0]), int(dlg_size[1])
+                if w > 0 and h > 0:
+                    dlg.resize(w, h)
+            except Exception:
+                pass
+
+        layout = QtWidgets.QFormLayout(dlg)
+
+        # ------------------------------------------------------------------
+        # Model: editable combo box pre-populated with reasonable defaults.
+        # ------------------------------------------------------------------
+        model_combo = QtWidgets.QComboBox(dlg)
+        model_combo.setEditable(True)
+
+        # A set of low-cost / reasonable models for summarization. This list is
+        # only a convenience for the UI; you can always type any valid
+        # OpenRouter model ID manually.
+        default_models = [
+            # OpenAI
+            "openai/gpt-4o-mini",
+            "openai/gpt-4o",
+
+            # General auto-routing
+            "openrouter/auto",
+
+            # Mistral
+            "mistralai/mistral-small",
+            "mistralai/mistral-nemo",
+
+            # Anthropic
+            "anthropic/claude-3.5-haiku",
+            "anthropic/claude-3-haiku-20240307",
+
+            # Google Gemini (note: may be less stable in some environments)
+            "google/gemini-1.5-flash",
+
+            # Meta Llama 3.1
+            "meta-llama/llama-3.1-8b-instruct",
+            "meta-llama/llama-3.1-70b-instruct",
+
+            # Cohere
+            "cohere/command-r-plus",
+
+            # Qwen (Alibaba)
+            "qwen/qwen-2.5-7b-instruct",
+            "qwen/qwen-plus",
+
+            # DeepSeek (China)
+            "deepseek/deepseek-chat",
+            "deepseek/deepseek-r1",
+
+            # Moonshot / Kimi
+            "moonshotai/kimi-k2",
+            "moonshotai/kimi-k2-thinking",
+        ]
+        for m in default_models:
+            model_combo.addItem(m)
+
+        current_model = getattr(self.viewer, "_llm_model_override", None) or getattr(
+            self.viewer._llm_client, "model", ""
+        )
+        if current_model and current_model not in default_models:
+            model_combo.addItem(current_model)
+        if current_model:
+            idx = model_combo.findText(current_model)
+            if idx >= 0:
+                model_combo.setCurrentIndex(idx)
+            else:
+                model_combo.setEditText(current_model)
+        layout.addRow("Model ID:", model_combo)
+
+        # ------------------------------------------------------------------
+        # Max tokens
+        # ------------------------------------------------------------------
+        max_tokens_edit = QtWidgets.QLineEdit(dlg)
+        if getattr(self.viewer, "_llm_max_tokens", None) is not None:
+            max_tokens_edit.setText(str(self.viewer._llm_max_tokens))
+        layout.addRow("Max tokens (optional):", max_tokens_edit)
+
+        # ------------------------------------------------------------------
+        # Temperature: slider + live readout label
+        # ------------------------------------------------------------------
+        temp_container = QtWidgets.QWidget(dlg)
+        temp_layout = QtWidgets.QHBoxLayout(temp_container)
+        temp_layout.setContentsMargins(0, 0, 0, 0)
+
+        temp_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal, temp_container)
+        temp_slider.setMinimum(0)
+        temp_slider.setMaximum(100)  # 0.00 .. 1.00 in 0.01 steps
+        current_temp = float(getattr(self.viewer, "_llm_temperature", 0.1))
+        current_temp = max(0.0, min(1.0, current_temp))
+        temp_slider.setValue(int(round(current_temp * 100)))
+
+        temp_label = QtWidgets.QLabel(f"{current_temp:.2f}", temp_container)
+        temp_label.setMinimumWidth(40)
+
+        def _on_temp_changed(value: int):
+            temp_label.setText(f"{value / 100.0:.2f}")
+
+        temp_slider.valueChanged.connect(_on_temp_changed)
+
+        temp_layout.addWidget(temp_slider, stretch=1)
+        temp_layout.addWidget(temp_label, stretch=0)
+
+        layout.addRow("Temperature:", temp_container)
+
+        # ------------------------------------------------------------------
+        # Prompt template: preset combo + editable text box
+        # ------------------------------------------------------------------
+        prompt_combo = QtWidgets.QComboBox(dlg)
+        prompt_combo.setEditable(False)
+
+        # Pull presets from the viewer's configuration
+        presets = getattr(self.viewer, "_llm_presets", {}) or {}
+        current_preset_id = getattr(self.viewer, "_llm_current_preset_id", None)
+        preset_ids_by_index = []
+        labels = []
+
+        for pid, config in presets.items():
+            label = str(config.get("label", pid))
+            labels.append(label)
+            preset_ids_by_index.append(pid)
+            prompt_combo.addItem(label)
+
+        # Add a generic "Custom" entry
+        prompt_combo.addItem("Custom")
+        custom_index = prompt_combo.count() - 1
+
+        prompt_edit = QtWidgets.QPlainTextEdit(dlg)
+        current_prompt = getattr(self.viewer, "_llm_prompt_template", None)
+        if not current_prompt and current_preset_id and current_preset_id in presets:
+            current_prompt = presets[current_preset_id].get("template", "")
+        if not current_prompt:
+            current_prompt = getattr(self.viewer._llm_client, "prompt_template", "")
+        prompt_edit.setPlainText(current_prompt)
+
+        # Select the current preset if we can match it; otherwise fall back to "Custom".
+        initial_index = custom_index
+        if current_preset_id and current_preset_id in presets:
+            for idx, pid in enumerate(preset_ids_by_index):
+                if pid == current_preset_id:
+                    initial_index = idx
+                    break
+        prompt_combo.setCurrentIndex(initial_index)
+
+        def _on_preset_changed(index: int):
+            # If a known preset is selected, update the template editor from it.
+            if 0 <= index < len(preset_ids_by_index):
+                pid = preset_ids_by_index[index]
+                cfg = presets.get(pid) or {}
+                tmpl = cfg.get("template", "")
+                if tmpl:
+                    prompt_edit.setPlainText(tmpl)
+            # If "Custom" is selected, leave the text as-is.
+
+        prompt_combo.currentIndexChanged.connect(_on_preset_changed)
+
+        layout.addRow("Prompt preset:", prompt_combo)
+        layout.addRow("Prompt template (use {code} placeholder):", prompt_edit)
+
+        # ------------------------------------------------------------------
+        # Buttons
+        # ------------------------------------------------------------------
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dlg,
+        )
+        layout.addRow(button_box)
+
+        def _on_accept():
+            # Apply changes back to the viewer; the next summarize call will
+            # push these into the LLM client and be persisted to llm_config.json.
+
+            # Model
+            model_text = model_combo.currentText().strip() or None
+
+            # Max tokens
+            max_tokens_value: Optional[int]
+            max_tokens_text = max_tokens_edit.text().strip()
+            if max_tokens_text:
+                try:
+                    max_tokens_value = max(0, int(max_tokens_text))
+                except ValueError:
+                    max_tokens_value = None
+            else:
+                max_tokens_value = None
+
+            # Temperature from slider
+            slider_value = temp_slider.value()
+            temperature_value = slider_value / 100.0
+
+            # Prompt template
+            prompt_text = prompt_edit.toPlainText()
+
+            # Determine selected preset ID (if any)
+            index = prompt_combo.currentIndex()
+            preset_id: Optional[str] = None
+            if 0 <= index < len(preset_ids_by_index):
+                preset_id = preset_ids_by_index[index]
+            # If "Custom" is selected, we leave preset_id as None; the template
+            # will still be used, but it won't overwrite a named preset.
+
+            if hasattr(self.viewer, "persist_llm_settings"):
+                self.viewer.persist_llm_settings(
+                    model=model_text,
+                    max_tokens=max_tokens_value,
+                    temperature=temperature_value,
+                    preset_id=preset_id,
+                    prompt_template=prompt_text,
+                )
+
+            # Persist dialog size for next time.
+            try:
+                size = dlg.size()
+                cfg = getattr(self.viewer, "_llm_config", {}) or {}
+                ui_state = dict(cfg.get("ui") or {})
+                ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
+                cfg["ui"] = ui_state
+                save_llm_config(cfg)
+                self.viewer._llm_config = cfg
+            except Exception:
+                pass
+
+            dlg.accept()
+
+        def _on_reject():
+            # Persist dialog size even on cancel so the layout is sticky.
+            try:
+                size = dlg.size()
+                cfg = getattr(self.viewer, "_llm_config", {}) or {}
+                ui_state = dict(cfg.get("ui") or {})
+                ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
+                cfg["ui"] = ui_state
+                save_llm_config(cfg)
+                self.viewer._llm_config = cfg
+            except Exception:
+                pass
+            dlg.reject()
+
+        button_box.accepted.connect(_on_accept)
+        button_box.rejected.connect(_on_reject)
+
+        dlg.exec_()
 
     def closeEvent(self, event):
         """
