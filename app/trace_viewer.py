@@ -176,10 +176,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Left side: vertical split (top: controls + execution + I/O, bottom: summary)
         self.left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self.main_splitter)
-        # Allow the left pane to become narrow but not disappear entirely.
+        # Allow the left pane to become narrow; the actual minimum width is
+        # governed by the child widgets (top_left and summary_container).
         self.left_splitter.setMinimumWidth(0)
-        self.left_splitter.setCollapsible(0, False)
-        self.left_splitter.setCollapsible(1, False)
 
         # Top-left container: codebase label, command row, combined function execution and file I/O
         top_left = QtWidgets.QWidget(self.left_splitter)
@@ -318,11 +317,6 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.editor = CodeEditor(right_container)
         right_layout.addWidget(self.editor, stretch=1)
-
-        # Do not allow either side of the main splitter to collapse completely;
-        # this keeps both panes visible while still permitting very narrow sizes.
-        self.main_splitter.setCollapsible(0, False)
-        self.main_splitter.setCollapsible(1, False)
 
         # Adjust splitter sizes: make summary vertically smaller. If we have
         # persisted sizes in the config, prefer those over the default stretch
