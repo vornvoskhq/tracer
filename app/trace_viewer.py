@@ -1600,10 +1600,6 @@ class _LLMSummaryWorker(QtCore.QThread):
 
     def run(self):
         try:
-            # Debug hook: log when the worker starts so we can diagnose models
-            # that may hang or behave differently (e.g., specific providers).
-            model = getattr(self._client, "model", "<unknown>")
-            print(f"[LLMSummaryWorker] start model={model} preset={self._preset_id} meta={self._meta}")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -1612,12 +1608,7 @@ class _LLMSummaryWorker(QtCore.QThread):
                 )
             finally:
                 loop.close()
-            print(
-                f"[LLMSummaryWorker] done model={model} preset={self._preset_id} "
-                f"len={len(text) if isinstance(text, str) else 'n/a'}"
-            )
             self.finished_with_result.emit(text)
         except Exception as exc:
             # Ensure we always emit a signal so the QThread can shut down cleanly.
-            print(f"[LLMSummaryWorker] error model={getattr(self._client, 'model', '<unknown>')}: {exc}")
             self.error_occurred.emit(str(exc))
