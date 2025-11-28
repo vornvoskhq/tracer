@@ -193,19 +193,21 @@ def _log_file_pretty_run(
     meta: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
-    Append a human-readable record of an LLM call to logs/llm_runs_pretty.log.
+    Append a human-readable record of an LLM call to logs/llm_logs.jsonl.
 
-    This log is designed to be easy to read in a terminal (e.g. via less),
-    preserving line breaks in the prompt and response.
+    Despite the .jsonl suffix, this is a plain text log optimized for reading
+    in a terminal (e.g. via less), preserving line breaks in the prompt and
+    response. It replaces the older JSONL-style log.
     """
     try:
         root = Path(__file__).resolve().parent.parent
         log_dir = root / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "llm_runs_pretty.log"
+        # Single, primary log file for all LLM runs.
+        log_path = log_dir / "llm_logs.jsonl"
 
         # Local time for easier human inspection
-        ts_local = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
+        ts_local = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
 
         preset_display = preset_id or "-"
         max_tok_display = str(max_tokens) if isinstance(max_tokens, int) and max_tokens > 0 else "-"
@@ -244,8 +246,40 @@ def _log_file_pretty_run(
             f"in: {prompt_tokens}  out: {completion_tokens}  dur: {dur_display}  cost: {cost_display}"
         )
         block_lines.append("")
-        block_lines.append("PROMPT:")
-        block_lines.append(prompt_text)
+
+        # For entrypoint discovery logs, avoid dumping all code; instead log the
+        # original instructions and a concise list of files that were included.
+        if kind == "entrypoints":
+            header = prompt_text
+            marker = "Project file snippets:"
+            idx = header.find(marker)
+            if idx != -1:
+                header = header[: idx + len(marker)]
+            header = header.strip()
+
+            # Extract file names from lines starting with "### ".
+            files: list[str] = []
+            seen_files: set[str] = set()
+            for line in prompt_text.splitlines():
+                if line.startswith("### "):
+                    name = line[4:].strip()
+                    if name and name not in seen_files:
+                        seen_files.add(name)
+                        files.append(name)
+
+            block_lines.append("PROMPT (instructions only):")
+            block_lines.append(header)
+            block_lines.append("")
+            block_lines.append("FILES SENT:")
+            if files:
+                for fpath in files:
+                    block_lines.append(f"  - {fpath}")
+            else:
+                block_lines.append("  (no files parsed from context)")
+        else:
+            block_lines.append("PROMPT:")
+            block_lines.append(prompt_text)
+
         block_lines.append("")
         block_lines.append("RESPONSE:")
         block_lines.append(response_text)
@@ -375,19 +409,7 @@ class OpenRouterClient:
                 estimated_cost=estimated_cost,
                 duration_s=duration_s,
             )
-            _log_file_run(
-                model=self.model,
-                preset_id=preset_id,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                prompt_tokens=in_tokens,
-                completion_tokens=out_tokens,
-                estimated_cost=estimated_cost,
-                duration_s=duration_s,
-                prompt=prompt,
-                response=(result_text or ""),
-                meta=meta,
-            )
+            # Single, human-readable log for all runs.
             _log_file_pretty_run(
                 model=self.model,
                 preset_id=preset_id,
