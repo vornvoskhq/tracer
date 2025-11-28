@@ -1246,7 +1246,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
         config = dict(self._llm_config or {})
         config["verbose_logging"] = bool(self._llm_verbose_logging)
 
-        ui_state = dict(self._ui_state or {})
+        # Start from whatever UI state is currently stored in the config so we
+        # do not drop keys such as "llm_dialog_size" that may have been written
+        # by the main window.
+        base_ui = {}
+        if isinstance(self._llm_config, dict):
+            base_ui = dict(self._llm_config.get("ui") or {})
+        ui_state = base_ui
+
         if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
             try:
                 ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
@@ -1318,7 +1325,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Preserve existing UI and verbose logging settings.
         config["verbose_logging"] = bool(self._llm_verbose_logging)
-        ui_state = dict(self._ui_state or {})
+
+        # Start from whatever UI state is currently stored in the config so we
+        # do not drop keys such as "llm_dialog_size" that may have been written
+        # by the main window.
+        base_ui = {}
+        if isinstance(self._llm_config, dict):
+            base_ui = dict(self._llm_config.get("ui") or {})
+        ui_state = base_ui
+
         # Capture current splitter sizes so the layout and columns are restored on next run.
         if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
             try:
@@ -1338,6 +1353,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         save_llm_config(config)
         self._llm_config = config
+        self._ui_state = ui_state
 
 
 class _TraceWorker(QtCore.QThread):

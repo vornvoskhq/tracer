@@ -309,7 +309,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Model
             model_text = model_combo.currentText().strip() or None
-            # Max to_code
+            # Max tokens
             max_tokens_value: Optional[int]
             max_tokens_text = max_tokens_edit.text().strip()
             if max_tokens_text:
@@ -363,7 +363,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     cfg["models"] = models_from_ui
 
                 save_llm_config(cfg)
+                # Keep the viewer's cached config and UI state in sync with what
+                # we just wrote so that subsequent save_ui_state() calls do not
+                # drop the dialog size or models.
                 self.viewer._llm_config = cfg
+                if hasattr(self.viewer, "_ui_state"):
+                    self.viewer._ui_state = dict(cfg.get("ui") or {})
             except Exception:
                 pass
 
@@ -388,6 +393,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 save_llm_config(cfg)
                 self.viewer._llm_config = cfg
+                if hasattr(self.viewer, "_ui_state"):
+                    self.viewer._ui_state = dict(cfg.get("ui") or {})
             except Exception:
                 pass
             dlg.reject()
