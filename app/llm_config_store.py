@@ -56,14 +56,33 @@ DEFAULT_PRESETS: Dict[str, Dict[str, str]] = {
         "label": "Potential bugs / edge cases",
         "template": (
             "Review the following function or execution path for potential bugs and edge cases. "
-            "Provide a short explanation that covers:\n"
-            "- Any obvious or likely bugs\n"
-            "- Edge cases that might fail (e.g., empty inputs, None, large values)\n"
-            "- Error handling or lack thereof\n"
-            "- Suggestions for tests that should be added\n\n"
-            "Function source or trace context:\n"
-            "```python\n"
-            "{code}\n"
+            "Provide a short explanation that covers:\\n"
+            "- Any obvious or likely bugs\\n"
+            "- Edge cases that might fail (e.g., empty inputs, None, large values)\\n"
+            "- Error handling or lack thereof\\n"
+            "- Suggestions for tests that should be added\\n\\n"
+            "Function source or trace context:\\n"
+            "```python\\n"
+            "{code}\\n"
+            "```"
+        ),
+    },
+    "entrypoints": {
+        "label": "Suggest entry points",
+        "template": (
+            "You are helping a developer understand a new, black-box Python codebase. "
+            "You will be given snippets from many .py files in this project.\\n\\n"
+            "Your tasks:\\n"
+            "- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\n"
+            "- For each candidate entrypoint, briefly explain why it is likely an entrypoint "
+            "(e.g., has an if __name__ == '__main__' block, defines a main() that parses CLI args, "
+            "or is clearly the starting script).\\n"
+            "- If there appears to be a thin wrapper script that quickly hands off control to a deeper module "
+            "or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\n"
+            "- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\n\\n"
+            "Project file snippets:\\n"
+            "```text\\n"
+            "{code}\\n"
             "```"
         ),
     },

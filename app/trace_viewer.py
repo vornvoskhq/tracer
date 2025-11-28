@@ -245,17 +245,28 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_path_button = QtWidgets.QPushButton(
             "Summarize Execution Path", summary_container
         )
+        self.summary_entrypoints_button = QtWidgets.QPushButton(
+            "Suggest Entry Points", summary_container
+        )
+        self.summary_config_button = QtWidgets.QToolButton(summary_container)
+        self.summary_config_button.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView)
+        )
+        self.summary_config_button.setToolTip("Open LLM Summary Settings")
 
         summary_layout.addWidget(self.summary_label)
         summary_layout.addWidget(self.summary_text, stretch=1)
 
-        # Place the two summary buttons on a single horizontal row to minimize
-        # vertical space and make the two primary actions equally visible.
+        # Place all LLM actions on a single horizontal row to minimize vertical
+        # space and make the primary actions equally visible.
         buttons_row = QtWidgets.QHBoxLayout()
         buttons_row.setContentsMargins(0, 0, 0, 0)
         buttons_row.setSpacing(6)
         buttons_row.addWidget(self.summary_button)
         buttons_row.addWidget(self.summary_path_button)
+        buttons_row.addWidget(self.summary_entrypoints_button)
+        buttons_row.addStretch(1)
+        buttons_row.addWidget(self.summary_config_button)
         summary_layout.addLayout(buttons_row)
 
         # Right side: container with label + code editor
@@ -285,6 +296,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
         )
         self.summary_button.clicked.connect(self._on_summarize_clicked)
         self.summary_path_button.clicked.connect(self._on_summarize_path_clicked)
+        self.summary_entrypoints_button.clicked.connect(self._on_suggest_entrypoints_clicked)
+        self.summary_config_button.clicked.connect(self._on_llm_config_button_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
     # Public API ----------------------------------------------------------
@@ -341,7 +354,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setDisabled(True)
         self.summary_button.setDisabled(True)
         self.summary_path_button.setDisabled(True)
-        self.run_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
+        self.run_button.setDisabled(Trunewe</)
+e)
 
         worker = _TraceWorker(codebase, command)
         worker.finished_with_result.connect(self._on_trace_finished)
@@ -373,6 +388,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
         self.run_button.setDisabled(False)
 
         # Ensure the worker thread has fully finished before dropping our
@@ -502,6 +518,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
         self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
         self.run_button.setDisabled(False)
 
         # Ensure the worker thread has fully finished before dropping our
@@ -880,6 +897,52 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         return "\n".join(lines)
 
+    def _build_entrypoints_context(self) -> Optional[str]:
+        """
+        Build a context string listing Python files in the current codebase and
+        short snippets from each, suitable for the entrypoints preset.
+        """
+        if self._current_codebase is None:
+            return None
+
+        base = self._current_codebase
+        py_files = sorted(base.rglob("*.py"))
+        if not py_files:
+            return None
+
+        max_files = 30
+        max_lines_per_file = 80
+        max_total_chars = 20000
+
+        lines: List[str] = []
+        lines.append(f"Codebase: {base.name}")
+        lines.append("Collected Python file snippets (limited sample):")
+
+        total_chars = 0
+        for idx, path in enumerate(py_files):
+            if idx >= max_files:
+                lines.append("... (additional files omitted for brevity) ...")
+                break
+            try:
+                rel = path.relative_to(base)
+            except ValueError:
+                rel = path
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+
+            snippet_lines = text.splitlines()[:max_lines_per_file]
+            snippet = "\n".join(snippet_lines)
+            block = f"\n### {rel}\n```python\n{snippet}\n```"
+            if total_chars + len(block) > max_total_chars:
+                lines.append("... (truncated due to size limits) ...")
+                break
+            lines.append(block)
+            total_chars += len(block)
+
+        return "\n".join(lines)
+
     def _on_summarize_clicked(self):
         code = self.editor.text()
         if not code.strip():
@@ -892,6 +955,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.summary_button.setDisabled(True)
         self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
         self.summary_text.setMarkdown("Requesting summary from OpenRouter...")
 
         if self._llm_worker is not None and self._llm_worker.isRunning():
@@ -931,6 +995,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.summary_button.setDisabled(True)
         self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
         self.summary_text.setMarkdown("Requesting path summary from OpenRouter...")
 
         if self._llm_worker is not None and self._llm_worker.isRunning():
@@ -958,12 +1023,68 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._llm_worker = worker
         worker.start()
 
+    def _on_suggest_entrypoints_clicked(self):
+        context = self._build_entrypoints_context()
+        if not context:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Python Files",
+                "No Python files were found in the current codebase.",
+            )
+            return
+
+        self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
+        self.summary_entrypoints_button.setDisabled(True)
+        self.summary_text.setMarkdown("Requesting entrypoint suggestions from OpenRouter...")
+
+        if self._llm_worker is not None and self._llm_worker.isRunning():
+            # Avoid starting multiple concurrent LLM requests
+            return
+
+        # Apply any overrides from the settings dialog to the LLM client.
+        self._apply_llm_overrides()
+
+        # For this action, prefer the dedicated 'entrypoints' preset if available,
+        # without changing the user's default preset selection.
+        preset_id = "entrypoints" if "entrypoints" in self._llm_presets else self._llm_current_preset_id
+        if preset_id and preset_id in self._llm_presets:
+            tmpl = self._llm_presets[preset_id].get("template") or self._llm_client.prompt_template
+            self._llm_client.prompt_template = tmpl
+
+        # Remember context for headers and logging
+        self._last_llm_kind = "entrypoints"
+        self._last_llm_model = self._llm_client.model
+        self._last_llm_preset_id = preset_id
+
+        meta: Dict[str, Any] = {}
+        if self._current_codebase is not None:
+            meta["codebase"] = self._current_codebase.name
+        if self._current_command:
+            meta["command"] = self._current_command
+        meta["kind"] = "entrypoints"
+
+        worker = _LLMSummaryWorker(context, self._llm_client, preset_id, meta)
+        worker.finished_with_result.connect(self._on_summary_finished)
+        worker.error_occurred.connect(self._on_summary_error)
+        self._llm_worker = worker
+        worker.start()
+
     def _on_summary_finished(self, text: str):
         self.summary_button.setDisabled(False)
         self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
 
         # Build a small header describing what was summarized and with which settings.
-        kind_label = "Function" if self._last_llm_kind == "function" else "Path"
+        if self._last_llm_kind == "function":
+            kind_label = "Function"
+        elif self._last_llm_kind == "path":
+            kind_label = "Path"
+        elif self._last_llm_kind:
+            kind_label = self._last_llm_kind.capitalize()
+        else:
+            kind_label = "LLM"
+
         model = self._last_llm_model or self._llm_client.model
         preset = self._last_llm_preset_id or "-"
         header = f"**[{kind_label}]** `model={model}` `preset={preset}`"
@@ -976,6 +1097,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
     def _on_summary_error(self, message: str):
         self.summary_button.setDisabled(False)
         self.summary_path_button.setDisabled(False)
+        self.summary_entrypoints_button.setDisabled(False)
         # Errors are simple text; render them as-is.
         self.summary_text.setPlainText(message)
         self._llm_worker = None
@@ -1043,6 +1165,17 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 self._llm_worker.quit()
                 self._llm_worker.wait()
             self._llm_worker = None
+
+    def _on_llm_config_button_clicked(self) -> None:
+        """
+        Open the LLM Summary Settings dialog via the parent main window.
+        """
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_on_llm_settings"):
+            try:
+                parent._on_llm_settings()
+            except Exception:
+                pass
 
     def persist_llm_settings(
         self,
