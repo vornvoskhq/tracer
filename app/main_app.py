@@ -127,7 +127,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_llm_settings(self):
         """
-        Open a simple dialog allowing the user to configure LLM summary settings.
+        Open a dialog allowing the user to configure LLM summary settings.
         """
         if not hasattr(self.viewer, "_llm_client"):
             return
@@ -137,35 +137,162 @@ class MainWindow(QtWidgets.QMainWindow):
 
         layout = QtWidgets.QFormLayout(dlg)
 
-        # Model
-        model_edit = QtWidgets.QLineEdit(dlg)
+        # ------------------------------------------------------------------
+        # Model: editable combo box pre-populated with reasonable defaults.
+        # ------------------------------------------------------------------
+        model_combo = QtWidgets.QComboBox(dlg)
+        model_combo.setEditable(True)
+
+        # A small set of low-cost / reasonable models for summarization.
+        default_models = [
+            "openai/gpt-4o-mini",
+            "openai/gpt-4o",
+            "openrouter/auto",
+            "mistralai/mistral-small",
+            "mistralai/mistral-nemo",
+            "anthropic/claude-3.5-haiku",
+            "google/gemini-1.5-flash",
+            "meta-llama/llama-3.1-8b-instruct",
+            "meta-llama/llama-3.1-70b-instruct",
+            "cohere/command-r-plus",
+        ]
+        for m in default_models:
+            model_combo.addItem(m)
+
         current_model = getattr(self.viewer, "_llm_model_override", None) or getattr(
             self.viewer._llm_client, "model", ""
         )
-        model_edit.setText(current_model)
-        layout.addRow("Model ID:", model_edit)
+        if current_model and current_model not in default_models:
+            model_combo.addItem(current_model)
+        if current_model:
+            idx = model_combo.findText(current_model)
+            if idx >= 0:
+                model_combo.setCurrentIndex(idx)
+            else:
+                model_combo.setEditText(current_model)
+        layout.addRow("Model ID:", model_combo)
 
+        # ------------------------------------------------------------------
         # Max tokens
+        # ------------------------------------------------------------------
         max_tokens_edit = QtWidgets.QLineEdit(dlg)
         if getattr(self.viewer, "_llm_max_tokens", None) is not None:
             max_tokens_edit.setText(str(self.viewer._llm_max_tokens))
         layout.addRow("Max tokens (optional):", max_tokens_edit)
 
-        # Temperature
-        temperature_edit = QtWidgets.QLineEdit(dlg)
-        temperature_edit.setText(str(getattr(self.viewer, "_llm_temperature", 0.1)))
-        layout.addRow("Temperature:", temperature_edit)
+        # ------------------------------------------------------------------
+        # Temperature: slider + live readout label
+        # ------------------------------------------------------------------
+        temp_container = QtWidgets.QWidget(dlg)
+        temp_layout = QtWidgets.QHBoxLayout(temp_container)
+        temp_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Prompt template
+        temp_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal, temp_container)
+        temp_slider.setMinimum(0)
+        temp_slider.setMaximum(100)  # 0.00 .. 1.00 in 0.01 steps
+        current_temp = float(getattr(self.viewer, "_llm_temperature", 0.1))
+        current_temp = max(0.0, min(1.0, current_temp))
+        temp_slider.setValue(int(round(current_temp * 100)))
+
+        temp_label = QtWidgets.QLabel(f"{current_temp:.2f}", temp_container)
+        temp_label.setMinimumWidth(40)
+
+        def _on_temp_changed(value: int):
+            temp_label.setText(f"{value / 100.0:.2f}")
+
+        temp_slider.valueChanged.connect(_on_temp_changed)
+
+        temp_layout.addWidget(temp_slider, stretch=1)
+        temp_layout.addWidget(temp_label, stretch=0)
+
+        layout.addRow("Temperature:", temp_container)
+
+        # ------------------------------------------------------------------
+        # Prompt template: preset combo + editable text box
+        # ------------------------------------------------------------------
+        prompt_presets = {
+            "Concise technical summary": (
+                "You are an expert Python engineer. Summarize the purpose and behavior "
+                "of the following function in concise, technical prose. Focus on:\n"
+                "- Overall purpose\n"
+                "- Key inputs and outputs\n"
+                "- Important side effects (I/O, network, database, etc.)\n"
+                "- Non-obvious edge cases or constraints\n\n"
+                "Function source:\n"
+                "```python\n"
+                "{code}\n"
+                "```"
+            ),
+            "High-level explanation for a new team member": (
+                "You are helping onboard a new engineer to this codebase. Explain what "
+                "the following function does in clear, approachable language. Focus on:\n"
+                "- What problem it solves in the overall system\n"
+                "- How it fits into the execution flow\n"
+                "- Any assumptions or preconditions\n"
+                "- Gotchas or areas where changes are risky\n\n"
+                "Function source:\n"
+                "```python\n"
+                "{code}\n"
+                "```"
+            ),
+            "Behavior + inputs/outputs only": (
+                "Summarize the behavior of the following function, focusing strictly on:\n"
+                "- Inputs (parameters and important global state)\n"
+                "- Outputs (return values and changes to state)\n"
+                "- Invariants the function relies on\n\n"
+                "Avoid restating the code line-by-line.\n\n"
+                "Function source:\n"
+                "```python\n"
+                "{code}\n"
+                "```"
+            ),
+            "Potential bugs / edge cases": (
+                "Review the following function for potential bugs and edge cases. "
+                "Provide a short explanation that covers:\n"
+                "- Any obvious or likely bugs\n"
+                "- Edge cases that might fail (e.g., empty inputs, None, large values)\n"
+                "- Error handling or lack thereof\n"
+                "- Suggestions for tests that should be added\n\n"
+                "Function source:\n"
+                "```python\n"
+                "{code}\n"
+                "```"
+            ),
+        }
+
+        prompt_combo = QtWidgets.QComboBox(dlg)
+        prompt_combo.setEditable(False)
+        for name in prompt_presets.keys():
+            prompt_combo.addItem(name)
+        prompt_combo.addItem("Custom")
+
         prompt_edit = QtWidgets.QPlainTextEdit(dlg)
         current_prompt = getattr(self.viewer, "_llm_prompt_template", None)
         if not current_prompt:
-            # Fall back to the client's current template for display
             current_prompt = getattr(self.viewer._llm_client, "prompt_template", "")
         prompt_edit.setPlainText(current_prompt)
+
+        # Try to match current prompt to one of the presets.
+        initial_index = prompt_combo.findText("Custom")
+        for i, (name, template) in enumerate(prompt_presets.items()):
+            if current_prompt.strip() == template.strip():
+                initial_index = i
+                break
+        prompt_combo.setCurrentIndex(initial_index)
+
+        def _on_preset_changed(index: int):
+            name = prompt_combo.itemText(index)
+            if name in prompt_presets:
+                prompt_edit.setPlainText(prompt_presets[name])
+
+        prompt_combo.currentIndexChanged.connect(_on_preset_changed)
+
+        layout.addRow("Prompt preset:", prompt_combo)
         layout.addRow("Prompt template (use {code} placeholder):", prompt_edit)
 
+        # ------------------------------------------------------------------
         # Buttons
+        # ------------------------------------------------------------------
         button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
             parent=dlg,
@@ -175,8 +302,12 @@ class MainWindow(QtWidgets.QMainWindow):
         def _on_accept():
             # Apply changes back to the viewer; the next summarize call will
             # push these into the LLM client.
-            self.viewer._llm_model_override = model_edit.text().strip() or None
 
+            # Model
+            model_text = model_combo.currentText().strip()
+            self.viewer._llm_model_override = model_text or None
+
+            # Max tokens
             max_tokens_text = max_tokens_edit.text().strip()
             if max_tokens_text:
                 try:
@@ -186,12 +317,11 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self.viewer._llm_max_tokens = None
 
-            temp_text = temperature_edit.text().strip()
-            try:
-                self.viewer._llm_temperature = float(temp_text)
-            except ValueError:
-                self.viewer._llm_temperature = 0.1
+            # Temperature from slider
+            slider_value = temp_slider.value()
+            self.viewer._llm_temperature = slider_value / 100.0
 
+            # Prompt template
             prompt_text = prompt_edit.toPlainText().strip()
             self.viewer._llm_prompt_template = prompt_text or None
 
