@@ -272,15 +272,13 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # (e.g. headings, bullet lists, code blocks) is easier to read.
         self.summary_text = QtWidgets.QTextEdit(summary_container)
         self.summary_text.setReadOnly(True)
-        self.summary_button = QtWidgets.QPushButton(
-            "Summarize Highlighted Function", summary_container
-        )
-        self.summary_path_button = QtWidgets.QPushButton(
-            "Summarize Execution Path", summary_container
-        )
-        self.summary_entrypoints_button = QtWidgets.QPushButton(
-            "Suggest Entry Points", summary_container
-        )
+        # Shorter button labels to fit comfortably on a single header row.
+        self.summary_button = QtWidgets.QPushButton("Function", summary_container)
+        self.summary_button.setToolTip("Summarize highlighted function")
+        self.summary_path_button = QtWidgets.QPushButton("Path", summary_container)
+        self.summary_path_button.setToolTip("Summarize execution path")
+        self.summary_entrypoints_button = QtWidgets.QPushButton("Entrypoints", summary_container)
+        self.summary_entrypoints_button.setToolTip("Suggest likely entry points")
         self.summary_config_button = QtWidgets.QToolButton(summary_container)
         self.summary_config_button.setIcon(
             self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView)

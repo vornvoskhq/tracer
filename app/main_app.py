@@ -158,6 +158,9 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("LLM Summary Settings")
 
+        # Current app configuration (including any persisted UI state).
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+
         layout = QtWidgets.QFormLayout(dlg)
 
         # ------------------------------------------------------------------
@@ -391,12 +394,13 @@ class MainWindow(QtWidgets.QMainWindow):
             dlg.reject()
 
         button_box.accepted.connect(_on_accept)
-        button_box.rejected.connect(_on_reject)
+        # Route all dialog rejections (Cancel button, ESC, window close \"X\") through
+        # a single handler so the dialog size is always persisted.
+        dlg.rejected.connect(_on_reject)
 
         # Restore last dialog size if we have one stored in config, after the
         # layout is constructed so Qt honors the requested size.
         try:
-            cfg = getattr(self.viewer, "_llm_config", {}) or {}
             ui_state = cfg.get("ui") or {}
             dlg_size = ui_state.get("llm_dialog_size")
             if isinstance(dlg_size, list) and len(dlg_size) == 2:
