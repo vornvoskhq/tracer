@@ -14,8 +14,9 @@ from pathlib import Path
 
 from PyQt5 import QtWidgets  # type: ignore
 
-# Ensure the repo root is on sys.path so that "app" and "main_execution_tracer"
-# can be imported reliably, even when running this script directly.
+# Ensure the repo root is on sys.path so that the "app" package (and its tracer
+# engine module) can be imported reliably, even when running this script
+# directly.
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

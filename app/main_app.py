@@ -5,12 +5,14 @@ from typing import Optional
 from PyQt5 import QtCore, QtWidgets
 
 from .trace_viewer import TraceViewerWidget
+from .llm_config_store import save_llm_config, DEFAULT_CONFIG
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_codebase: Path | None = None):
         super().__init__()
 
+        # Basic window properties; size will be adjusted if persisted UI config is present.
         self.setWindowTitle("Execution Trace Viewer")
         self.resize(1200, 800)
 
@@ -91,8 +93,10 @@ class MainWindow(QtWidgets.QMainWindow):
         config_menu.addAction(self.action_toggle_phase_column)
         config_menu.addAction(self.action_toggle_import_rows)
         config_menu.addSeparator()
-        config_menu.addAction(self.action_llm_settings)
+        # Place verbose logging before the settings dialog so that
+        # "LLM Summary Settings..." appears last in the menu.
         config_menu.addAction(self.action_llm_verbose_logging)
+        config_menu.addAction(self.action_llm_settings)
 
     # Slots ---------------------------------------------------------------
 
@@ -154,74 +158,37 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("LLM Summary Settings")
 
-        # Restore last dialog size if we have one stored in config.
+        # Current app configuration (including any persisted UI state).
         cfg = getattr(self.viewer, "_llm_config", {}) or {}
-        ui_state = cfg.get("ui") or {}
-        dlg_size = ui_state.get("llm_dialog_size")
-        if isinstance(dlg_size, list) and len(dlg_size) == 2:
-            try:
-                w, h = int(dlg_size[0]), int(dlg_size[1])
-                if w > 0 and h > 0:
-                    dlg.resize(w, h)
-            except Exception:
-                pass
 
         layout = QtWidgets.QFormLayout(dlg)
 
         # ------------------------------------------------------------------
-        # Model: editable combo box pre-populated with reasonable defaults.
+        # Model: editable combo box pre-populated with configurable defaults.
         # ------------------------------------------------------------------
         model_combo = QtWidgets.QComboBox(dlg)
         model_combo.setEditable(True)
 
-        # A set of low-cost / reasonable models for summarization. This list is
-        # only a convenience for the UI; you can always type any valid
-        # OpenRouter model ID manually.
-        default_models = [
-            # OpenAI
-            "openai/gpt-4o-mini",
-            "openai/gpt-4o",
+        # Load the list of known models from the shared app config, falling
+        # back to the DEFAULT_CONFIG models if none are stored yet.
+        cfg_models = []
+        try:
+            cfg_models = list((cfg.get("models") or []))  # type: ignore[assignment]
+        except Exception:
+            cfg_models = []
 
-            # General auto-routing
-            "openrouter/auto",
+        if not cfg_models:
+            cfg_models = list(DEFAULT_CONFIG.get("models", []))
 
-            # Mistral
-            "mistralai/mistral-small",
-            "mistralai/mistral-nemo",
-
-            # Anthropic
-            "anthropic/claude-3.5-haiku",
-            "anthropic/claude-3-haiku-20240307",
-
-            # Google Gemini (note: may be less stable in some environments)
-            "google/gemini-1.5-flash",
-
-            # Meta Llama 3.1
-            "meta-llama/llama-3.1-8b-instruct",
-            "meta-llama/llama-3.1-70b-instruct",
-
-            # Cohere
-            "cohere/command-r-plus",
-
-            # Qwen (Alibaba)
-            "qwen/qwen-2.5-7b-instruct",
-            "qwen/qwen-plus",
-
-            # DeepSeek (China)
-            "deepseek/deepseek-chat",
-            "deepseek/deepseek-r1",
-
-            # Moonshot / Kimi
-            "moonshotai/kimi-k2",
-            "moonshotai/kimi-k2-thinking",
-        ]
-        for m in default_models:
-            model_combo.addItem(m)
+        for m in cfg_models:
+            model_combo.addItem(str(m))
 
         current_model = getattr(self.viewer, "_llm_model_override", None) or getattr(
             self.viewer._llm_client, "model", ""
         )
-        if current_model and current_model not in default_models:
+        # Ensure the current model appears in the list even if it was not
+        # present in the stored configuration.
+        if current_model and current_model not in cfg_models:
             model_combo.addItem(current_model)
         if current_model:
             idx = model_combo.findText(current_model)
@@ -318,7 +285,8 @@ class MainWindow(QtWidgets.QMainWindow):
         prompt_combo.currentIndexChanged.connect(_on_preset_changed)
 
         layout.addRow("Prompt preset:", prompt_combo)
-        layout.addRow("Prompt template (use {code} placeholder):", prompt_edit)
+        # Use a two-line label so the dialog header does not stretch excessively.
+        layout.addRow("Prompt template\n(use {code} placeholder):", prompt_edit)
 
         # ------------------------------------------------------------------
         # Buttons
@@ -331,11 +299,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _on_accept():
             # Apply changes back to the viewer; the next summarize call will
-            # push these into the LLM client and be persisted to llm_config.json.
+            # push these into the LLM client and be persisted to app_config.json.
 
             # Model
             model_text = model_combo.currentText().strip() or None
-
             # Max tokens
             max_tokens_value: Optional[int]
             max_tokens_text = max_tokens_edit.text().strip()
@@ -371,45 +338,95 @@ class MainWindow(QtWidgets.QMainWindow):
                     prompt_template=prompt_text,
                 )
 
-            # Persist dialog size for next time.
+            # Persist dialog size and model list for next time.
             try:
                 size = dlg.size()
                 cfg = getattr(self.viewer, "_llm_config", {}) or {}
                 ui_state = dict(cfg.get("ui") or {})
                 ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
                 cfg["ui"] = ui_state
+
+                # Update stored model list from the combo box contents so the
+                # list of models is kept in the shared app_config.json.
+                models_from_ui = []
+                for i in range(model_combo.count()):
+                    text = model_combo.itemText(i).strip()
+                    if text and text not in models_from_ui:
+                        models_from_ui.append(text)
+                if models_from_ui:
+                    cfg["models"] = models_from_ui
+
                 save_llm_config(cfg)
+                # Keep the viewer's cached config and UI state in sync with what
+                # we just wrote so that subsequent save_ui_state() calls do not
+                # drop the dialog size or models.
                 self.viewer._llm_config = cfg
+                if hasattr(self.viewer, "_ui_state"):
+                    self.viewer._ui_state = dict(cfg.get("ui") or {})
             except Exception:
                 pass
 
             dlg.accept()
 
         def _on_reject():
-            # Persist dialog size even on cancel so the layout is sticky.
+            # Persist dialog size and model list even on cancel so the layout is sticky.
             try:
                 size = dlg.size()
                 cfg = getattr(self.viewer, "_llm_config", {}) or {}
                 ui_state = dict(cfg.get("ui") or {})
                 ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
                 cfg["ui"] = ui_state
+
+                models_from_ui = []
+                for i in range(model_combo.count()):
+                    text = model_combo.itemText(i).strip()
+                    if text and text not in models_from_ui:
+                        models_from_ui.append(text)
+                if models_from_ui:
+                    cfg["models"] = models_from_ui
+
                 save_llm_config(cfg)
                 self.viewer._llm_config = cfg
+                if hasattr(self.viewer, "_ui_state"):
+                    self.viewer._ui_state = dict(cfg.get("ui") or {})
             except Exception:
                 pass
-            dlg.reject()
 
         button_box.accepted.connect(_on_accept)
-        button_box.rejected.connect(_on_reject)
+        # Ensure the Cancel button actually closes the dialog.
+        button_box.rejected.connect(dlg.reject)
+        # Route all dialog rejections (Cancel button, ESC, window close \"X\") through
+        # a single handler so the dialog size is always persisted.
+        dlg.rejected.connect(_on_reject)
+
+        # Restore last dialog size if we have one stored in config, after the
+        # layout is constructed so Qt honors the requested size.
+        try:
+            ui_state = cfg.get("ui") or {}
+            dlg_size = ui_state.get("llm_dialog_size")
+            if isinstance(dlg_size, list) and len(dlg_size) == 2:
+                w, h = int(dlg_size[0]), int(dlg_size[1])
+                if w > 0 and h > 0:
+                    dlg.resize(w, h)
+        except Exception:
+            pass
 
         dlg.exec_()
 
     def closeEvent(self, event):
         """
-        Ensure background threads are stopped cleanly before the app exits.
+        Ensure background threads are stopped cleanly before the app exits,
+        and persist the current UI layout (splitter sizes, etc.) to the
+        shared app_config.json file.
         """
-        if hasattr(self.viewer, "cleanup_threads"):
-            self.viewer.cleanup_threads()
+        if hasattr(self, "viewer"):
+            if hasattr(self.viewer, "save_ui_state"):
+                try:
+                    self.viewer.save_ui_state()
+                except Exception:
+                    pass
+            if hasattr(self.viewer, "cleanup_threads"):
+                self.viewer.cleanup_threads()
         event.accept()
 
 
