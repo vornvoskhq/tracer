@@ -246,8 +246,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         summary_layout.addWidget(self.summary_label)
         summary_layout.addWidget(self.summary_text, stretch=1)
-        summary_layout.addWidget(self.summary_button, stretch=0)
-        summary_layout.addWidget(self.summary_path_button, stretch=0)
+
+        # Place the two summary buttons on a single horizontal row to minimize
+        # vertical space and make the two primary actions equally visible.
+        buttons_row = QtWidgets.QHBoxLayout()
+        buttons_row.setContentsMargins(0, 0, 0, 0)
+        buttons_row.setSpacing(6)
+        buttons_row.addWidget(self.summary_button)
+        buttons_row.addWidget(self.summary_path_button)
+        summary_layout.addLayout(buttons_row)
 
         # Right side: container with label + code editor
         right_container = QtWidgets.QWidget(main_splitter)
