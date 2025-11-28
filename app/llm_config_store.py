@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 
 # Default prompt presets and LLM configuration. This provides sane defaults when
-# no llm_config.json file exists yet.
+# no app_config.json file exists yet.
 DEFAULT_PRESETS: Dict[str, Dict[str, str]] = {
     "concise-tech": {
         "label": "Concise technical summary",
@@ -95,37 +95,71 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_tokens": 512,
     "default_prompt_preset": "concise-tech",
     "presets": DEFAULT_PRESETS,
+    # List of LLM model IDs to show in the settings UI combo box.
+    # This can be edited by the user and is persisted in app_config.json.
+    "models": [
+        # OpenAI
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        # General auto-routing
+        "openrouter/auto",
+        # Mistral
+        "mistralai/mistral-small",
+        "mistralai/mistral-nemo",
+        # Anthropic
+        "anthropic/claude-3.5-haiku",
+        "anthropic/claude-3-haiku-20240307",
+        # Google Gemini
+        "google/gemini-1.5-flash",
+        # Meta Llama 3.1
+        "meta-llama/llama-3.1-8b-instruct",
+        "meta-llama/llama-3.1-70b-instruct",
+        # Cohere
+        "cohere/command-r-plus",
+        # Qwen (Alibaba)
+        "qwen/qwen-2.5-7b-instruct",
+        "qwen/qwen-plus",
+        # DeepSeek
+        "deepseek/deepseek-chat",
+        "deepseek/deepseek-r1",
+        # Moonshot / Kimi
+        "moonshotai/kimi-k2",
+        "moonshotai/kimi-k2-thinking",
+    ],
     # Whether to log full LLM context (including file contents) to the LLM log.
     # When False, entrypoint logs only include instructions + file list.
     "verbose_logging": False,
     # Optional UI state; these keys may or may not be present in user configs.
     # They are included here only to document expected structure.
-    # "ui": {
-    #     "main_splitter_sizes": [600, 600],
-    #     "left_splitter_sizes": [400, 200],
-    #     "llm_dialog_size": [800, 600],
-    # },
+    "ui": {
+        "main_splitter_sizes": [600, 600],
+        "left_splitter_sizes": [400, 200],
+        "llm_dialog_size": [800, 600],
+    },
 }
 
 
 def _config_path() -> Path:
     """
-    Return the path to the llm_config.json file at the repository root.
+    Return the path to the app_config.json file at the repository root.
     """
     root = Path(__file__).resolve().parent.parent
-    return root / "llm_config.json"
+    return root / "app_config.json"
 
 
 def load_llm_config() -> Dict[str, Any]:
     """
-    Load LLM configuration from llm_config.json, falling back to defaults.
+    Load application configuration from app_config.json, falling back to defaults.
 
-    The returned dict always contains:
+    The returned dict always contains at least the following keys:
       - model: str
       - temperature: float
       - max_tokens: int | None
       - default_prompt_preset: str
       - presets: dict[preset_id, {label, template}]
+      - models: list[str]
+      - verbose_logging: bool
+      - ui: dict (may be empty)
     """
     config = deepcopy(DEFAULT_CONFIG)
 
@@ -135,7 +169,16 @@ def load_llm_config() -> Dict[str, Any]:
             raw = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
                 # Shallow merge for top-level keys we care about
-                for key in ("model", "temperature", "max_tokens", "default_prompt_preset", "presets"):
+                for key in (
+                    "model",
+                    "temperature",
+                    "max_tokens",
+                    "default_prompt_preset",
+                    "presets",
+                    "models",
+                    "verbose_logging",
+                    "ui",
+                ):
                     if key in raw:
                         config[key] = raw[key]
         except Exception:
@@ -181,7 +224,7 @@ def load_llm_config() -> Dict[str, Any]:
 
 def save_llm_config(config: Dict[str, Any]) -> None:
     """
-    Persist LLM configuration to llm_config.json.
+    Persist application configuration to app_config.json.
 
     Only known keys are written; unknown keys are ignored to keep the file tidy.
     """
@@ -216,5 +259,22 @@ def save_llm_config(config: Dict[str, Any]) -> None:
             template = str(pconf.get("template", DEFAULT_PRESETS.get(pid, {}).get("template", "{code}")))
             cleaned_presets[pid] = {"label": label, "template": template}
     to_save["presets"] = cleaned_presets
+
+    # Optional list of known models for the settings dialog.
+    models = config.get("models")
+    if isinstance(models, list):
+        cleaned_models = [str(m) for m in models if isinstance(m, str) and m.strip()]
+        if cleaned_models:
+            to_save["models"] = cleaned_models
+
+    # Verbose logging flag
+    verbose_logging = config.get("verbose_logging")
+    if isinstance(verbose_logging, bool):
+        to_save["verbose_logging"] = verbose_logging
+
+    # UI state (splitter sizes, dialog sizes, etc.)
+    ui_state = config.get("ui")
+    if isinstance(ui_state, dict):
+        to_save["ui"] = ui_state
 
     path.write_text(json.dumps(to_save, indent=2, sort_keys=True), encoding="utf-8")

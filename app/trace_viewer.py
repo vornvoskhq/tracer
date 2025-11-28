@@ -108,7 +108,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._llm_temperature: float = 0.1
         self._llm_prompt_template: Optional[str] = None
 
-        # LLM configuration (loaded from llm_config.json when available)
+        # LLM + app configuration (loaded from app_config.json when available)
         self._llm_config: Dict[str, Any] = load_llm_config()
         self._llm_presets: Dict[str, Dict[str, str]] = self._llm_config.get("presets", {}) or {}
 

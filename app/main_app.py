@@ -5,6 +5,7 @@ from typing import Optional
 from PyQt5 import QtCore, QtWidgets
 
 from .trace_viewer import TraceViewerWidget
+from .llm_config_store import save_llm_config
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -169,54 +170,61 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QFormLayout(dlg)
 
         # ------------------------------------------------------------------
-        # Model: editable combo box pre-populated with reasonable defaults.
+        # Model: editable combo box pre-populated with configurable defaults.
         # ------------------------------------------------------------------
         model_combo = QtWidgets.QComboBox(dlg)
         model_combo.setEditable(True)
 
-        # A set of low-cost / reasonable models for summarization. This list is
-        # only a convenience for the UI; you can always type any valid
-        # OpenRouter model ID manually.
-        default_models = [
-            # OpenAI
-            "openai/gpt-4o-mini",
-            "openai/gpt-4o",
+        # Load the list of known models from the shared app config, falling
+        # back to a reasonable hard-coded set if none is stored yet.
+        cfg_models = []
+        try:
+            cfg_models = list((cfg.get("models") or []))  # type: ignore[assignment]
+        except Exception:
+            cfg_models = []
 
-            # General auto-routing
-            "openrouter/auto",
+        if not cfg_models:
+            cfg_models = [
+                # OpenAI
+                "openai/gpt-4o-mini",
+                "openai/gpt-4o",
 
-            # Mistral
-            "mistralai/mistral-small",
-            "mistralai/mistral-nemo",
+                # General auto-routing
+                "openrouter/auto",
 
-            # Anthropic
-            "anthropic/claude-3.5-haiku",
-            "anthropic/claude-3-haiku-20240307",
+                # Mistral
+                "mistralai/mistral-small",
+                "mistralai/mistral-nemo",
 
-            # Google Gemini (note: may be less stable in some environments)
-            "google/gemini-1.5-flash",
+                # Anthropic
+                "anthropic/claude-3.5-haiku",
+                "anthropic/claude-3-haiku-20240307",
 
-            # Meta Llama 3.1
-            "meta-llama/llama-3.1-8b-instruct",
-            "meta-llama/llama-3.1-70b-instruct",
+                # Google Gemini (note: may be less stable in some environments)
+                "google/gemini-1.5-flash",
 
-            # Cohere
-            "cohere/command-r-plus",
+                # Meta Llama 3.1
+                "meta-llama/llama-3.1-8b-instruct",
+                "meta-llama/llama-3.1-70b-instruct",
 
-            # Qwen (Alibaba)
-            "qwen/qwen-2.5-7b-instruct",
-            "qwen/qwen-plus",
+                # Cohere
+                "cohere/command-r-plus",
 
-            # DeepSeek (China)
-            "deepseek/deepseek-chat",
-            "deepseek/deepseek-r1",
+                # Qwen (Alibaba)
+                "qwen/qwen-2.5-7b-instruct",
+                "qwen/qwen-plus",
 
-            # Moonshot / Kimi
-            "moonshotai/kimi-k2",
-            "moonshotai/kimi-k2-thinking",
-        ]
-        for m in default_models:
-            model_combo.addItem(m)
+                # DeepSeek (China)
+                "deepseek/deepseek-chat",
+                "deepseek/deepseek-r1",
+
+                # Moonshot / Kimi
+                "moonshotai/kimi-k2",
+                "moonshotai/kimi-k2-thinking",
+            ]
+
+        for m in cfg_models:
+            model_combo.addItem(str(m))
 
         current_model = getattr(self.viewer, "_llm_model_override", None) or getattr(
             self.viewer._llm_client, "model", ""
@@ -331,11 +339,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _on_accept():
             # Apply changes back to the viewer; the next summarize call will
-            # push these into the LLM client and be persisted to llm_config.json.
+            # push these into the LLM client and be persisted to app_config.json.
 
             # Model
-            model_text = model_combo.currentText().strip() or None
-
+            model_text = model_combo.currentText().strip() or _code
             # Max tokens
             max_tokens_value: Optional[int]
             max_tokens_text = max_tokens_edit.text().strip()
@@ -371,13 +378,24 @@ class MainWindow(QtWidgets.QMainWindow):
                     prompt_template=prompt_text,
                 )
 
-            # Persist dialog size for next time.
+            # Persist dialog size and model list for next time.
             try:
                 size = dlg.size()
                 cfg = getattr(self.viewer, "_llm_config", {}) or {}
                 ui_state = dict(cfg.get("ui") or {})
                 ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
                 cfg["ui"] = ui_state
+
+                # Update stored model list from the combo box contents so the
+                # list of models is kept in the shared app_config.json.
+                models_from_ui = []
+                for i in range(model_combo.count()):
+                    text = model_combo.itemText(i).strip()
+                    if text and text not in models_from_ui:
+                        models_from_ui.append(text)
+                if models_from_ui:
+                    cfg["models"] = models_from_ui
+
                 save_llm_config(cfg)
                 self.viewer._llm_config = cfg
             except Exception:
@@ -386,13 +404,22 @@ class MainWindow(QtWidgets.QMainWindow):
             dlg.accept()
 
         def _on_reject():
-            # Persist dialog size even on cancel so the layout is sticky.
+            # Persist dialog size and model list even on cancel so the layout is sticky.
             try:
                 size = dlg.size()
                 cfg = getattr(self.viewer, "_llm_config", {}) or {}
                 ui_state = dict(cfg.get("ui") or {})
                 ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
                 cfg["ui"] = ui_state
+
+                models_from_ui = []
+                for i in range(model_combo.count()):
+                    text = model_combo.itemText(i).strip()
+                    if text and text not in models_from_ui:
+                        models_from_ui.append(text)
+                if models_from_ui:
+                    cfg["models"] = models_from_ui
+
                 save_llm_config(cfg)
                 self.viewer._llm_config = cfg
             except Exception:
