@@ -905,7 +905,16 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return None
 
         base = self._current_codebase
-        py_files = sorted(base.rglob("*.py"))
+        py_files_raw = list(base.rglob("*.py"))
+        # Filter out virtualenvs and common third-party / stdlib-style directories
+        py_files = []
+        skip_fragments = ("/.venv/", "\\\\.venv\\\\", "site-packages", "/lib/python", "\\\\Lib\\\\")
+        for path in py_files_raw:
+            path_str = str(path)
+            if any(fragment in path_str for fragment in skip_fragments):
+                continue
+            py_files.append(path)
+
         if not py_files:
             return None
 
