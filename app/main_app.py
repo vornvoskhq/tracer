@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from .trace_viewer import TraceViewerWidget
 
