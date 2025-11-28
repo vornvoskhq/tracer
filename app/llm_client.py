@@ -137,8 +137,8 @@ def _log_file_run(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "llm_runs.jsonl"
 
-        # Shorter timestamp (no microseconds) to keep lines readable.
-        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # Short timestamp (minute precision, no timezone) to keep lines compact.
+        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
 
         # Round cost to a reasonable precision so the value is stable and compact.
         if isinstance(estimated_cost, (int, float)):
