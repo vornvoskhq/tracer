@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import Optional
 
 from PyQt5 import QtCore, QtWidgets
 
@@ -210,80 +211,51 @@ class MainWindow(QtWidgets.QMainWindow):
         # ------------------------------------------------------------------
         # Prompt template: preset combo + editable text box
         # ------------------------------------------------------------------
-        prompt_presets = {
-            "Concise technical summary": (
-                "You are an expert Python engineer. Summarize the purpose and behavior "
-                "of the following function in concise, technical prose. Focus on:\n"
-                "- Overall purpose\n"
-                "- Key inputs and outputs\n"
-                "- Important side effects (I/O, network, database, etc.)\n"
-                "- Non-obvious edge cases or constraints\n\n"
-                "Function source:\n"
-                "```python\n"
-                "{code}\n"
-                "```"
-            ),
-            "High-level explanation for a new team member": (
-                "You are helping onboard a new engineer to this codebase. Explain what "
-                "the following function does in clear, approachable language. Focus on:\n"
-                "- What problem it solves in the overall system\n"
-                "- How it fits into the execution flow\n"
-                "- Any assumptions or preconditions\n"
-                "- Gotchas or areas where changes are risky\n\n"
-                "Function source:\n"
-                "```python\n"
-                "{code}\n"
-                "```"
-            ),
-            "Behavior + inputs/outputs only": (
-                "Summarize the behavior of the following function, focusing strictly on:\n"
-                "- Inputs (parameters and important global state)\n"
-                "- Outputs (return values and changes to state)\n"
-                "- Invariants the function relies on\n\n"
-                "Avoid restating the code line-by-line.\n\n"
-                "Function source:\n"
-                "```python\n"
-                "{code}\n"
-                "```"
-            ),
-            "Potential bugs / edge cases": (
-                "Review the following function for potential bugs and edge cases. "
-                "Provide a short explanation that covers:\n"
-                "- Any obvious or likely bugs\n"
-                "- Edge cases that might fail (e.g., empty inputs, None, large values)\n"
-                "- Error handling or lack thereof\n"
-                "- Suggestions for tests that should be added\n\n"
-                "Function source:\n"
-                "```python\n"
-                "{code}\n"
-                "```"
-            ),
-        }
-
         prompt_combo = QtWidgets.QComboBox(dlg)
         prompt_combo.setEditable(False)
-        for name in prompt_presets.keys():
-            prompt_combo.addItem(name)
+
+        # Pull presets from the viewer's configuration
+        presets = getattr(self.viewer, "_llm_presets", {}) or {}
+        current_preset_id = getattr(self.viewer, "_llm_current_preset_id", None)
+        preset_ids_by_index = []
+        labels = []
+
+        for pid, config in presets.items():
+            label = str(config.get("label", pid))
+            labels.append(label)
+            preset_ids_by_index.append(pid)
+            prompt_combo.addItem(label)
+
+        # Add a generic "Custom" entry
         prompt_combo.addItem("Custom")
+        custom_index = prompt_combo.count() - 1
 
         prompt_edit = QtWidgets.QPlainTextEdit(dlg)
         current_prompt = getattr(self.viewer, "_llm_prompt_template", None)
+        if not current_prompt and current_preset_id and current_preset_id in presets:
+            current_prompt = presets[current_preset_id].get("template", "")
         if not current_prompt:
             current_prompt = getattr(self.viewer._llm_client, "prompt_template", "")
         prompt_edit.setPlainText(current_prompt)
 
-        # Try to match current prompt to one of the presets.
-        initial_index = prompt_combo.findText("Custom")
-        for i, (name, template) in enumerate(prompt_presets.items()):
-            if current_prompt.strip() == template.strip():
-                initial_index = i
-                break
+        # Select the current preset if we can match it; otherwise fall back to "Custom".
+        initial_index = custom_index
+        if current_preset_id and current_preset_id in presets:
+            for idx, pid in enumerate(preset_ids_by_index):
+                if pid == current_preset_id:
+                    initial_index = idx
+                    break
         prompt_combo.setCurrentIndex(initial_index)
 
         def _on_preset_changed(index: int):
-            name = prompt_combo.itemText(index)
-            if name in prompt_presets:
-                prompt_edit.setPlainText(prompt_presets[name])
+            # If a known preset is selected, update the template editor from it.
+            if 0 <= index < len(preset_ids_by_index):
+                pid = preset_ids_by_index[index]
+                cfg = presets.get(pid) or {}
+                tmpl = cfg.get("template", "")
+                if tmpl:
+                    prompt_edit.setPlainText(tmpl)
+            # If "Custom" is selected, leave the text as-is.
 
         prompt_combo.currentIndexChanged.connect(_on_preset_changed)
 
@@ -301,29 +273,45 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _on_accept():
             # Apply changes back to the viewer; the next summarize call will
-            # push these into the LLM client.
+            # push these into the LLM client and be persisted to llm_config.json.
 
             # Model
-            model_text = model_combo.currentText().strip()
-            self.viewer._llm_model_override = model_text or None
+            model_text = model_combo.currentText().strip() or None
 
             # Max tokens
+            max_tokens_value: Optional[int]
             max_tokens_text = max_tokens_edit.text().strip()
             if max_tokens_text:
                 try:
-                    self.viewer._llm_max_tokens = max(0, int(max_tokens_text))
+                    max_tokens_value = max(0, int(max_tokens_text))
                 except ValueError:
-                    self.viewer._llm_max_tokens = None
+                    max_tokens_value = None
             else:
-                self.viewer._llm_max_tokens = None
+                max_tokens_value = None
 
             # Temperature from slider
             slider_value = temp_slider.value()
-            self.viewer._llm_temperature = slider_value / 100.0
+            temperature_value = slider_value / 100.0
 
             # Prompt template
             prompt_text = prompt_edit.toPlainText().strip()
-            self.viewer._llm_prompt_template = prompt_text or None
+
+            # Determine selected preset ID (if any)
+            index = prompt_combo.currentIndex()
+            preset_id: Optional[str] = None
+            if 0 <= index < len(preset_ids_by_index):
+                preset_id = preset_ids_by_index[index]
+            # If "Custom" is selected, we leave preset_id as None; the template
+            # will still be used, but it won't overwrite a named preset.
+
+            if hasattr(self.viewer, "persist_llm_settings"):
+                self.viewer.persist_llm_settings(
+                    model=model_text,
+                    max_tokens=max_tokens_value,
+                    temperature=temperature_value,
+                    preset_id=preset_id,
+                    prompt_template=prompt_text,
+                )
 
             dlg.accept()
 

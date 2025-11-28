@@ -1,7 +1,9 @@
 import asyncio
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import aiohttp
 
@@ -13,7 +15,7 @@ DEFAULT_MODEL = "openai/gpt-4o-mini"
 # Very rough price table (USD per 1M tokens) for a few common models.
 # This is only used for CLI-side cost estimation and is not guaranteed to be
 # accurate for your specific OpenRouter account or pricing tier.
-PRICE_TABLE_USD_PER_1M = {
+PRICE_TABLE_USD_PER_1M: Dict[str, Dict[str, float]] = {
     "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "openai/gpt-4o": {"input": 5.00, "output": 15.00},
     # Add more entries here if you regularly use other models and know their pricing.
@@ -27,7 +29,7 @@ DEFAULT_PROMPT_TEMPLATE = (
     "- Key inputs and outputs\n"
     "- Important side effects (I/O, network, database, etc.)\n"
     "- Non-obvious edge cases or constraints\n\n"
-    "Function source:\n"
+    "Function source or trace context:\n"
     "```python\n"
     "{code}\n"
     "```"
@@ -71,6 +73,83 @@ def _load_api_key_from_env_file() -> str:
     return ""
 
 
+def _log_console_run(
+    *,
+    model: str,
+    preset_id: Optional[str],
+    temperature: float,
+    max_tokens: Optional[int],
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: Optional[float],
+) -> None:
+    """
+    Emit a compact, single-line summary of an LLM call to the console.
+    """
+    preset_display = preset_id or "-"
+    max_tok_display = str(max_tokens) if isinstance(max_tokens, int) and max_tokens > 0 else "-"
+    if estimated_cost is None:
+        cost_display = "NA"
+    else:
+        cost_display = f"${estimated_cost:.6f}"
+
+    print(
+        "LLM | "
+        f"model={model} | "
+        f"preset={preset_display} | "
+        f"temp={temperature:.2f} | "
+        f"max_tok={max_tok_display} | "
+        f"in={prompt_tokens} | "
+        f"out={completion_tokens} | "
+        f"cost={cost_display}"
+    )
+
+
+def _log_file_run(
+    *,
+    model: str,
+    preset_id: Optional[str],
+    temperature: float,
+    max_tokens: Optional[int],
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: Optional[float],
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Append a detailed JSON record of an LLM call to logs/llm_runs.jsonl.
+
+    This runs quietly; failures are ignored rather than surfacing in the UI.
+    """
+    try:
+        root = Path(__file__).resolve().parent.parent
+        log_dir = root / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "llm_runs.jsonl"
+
+        record: Dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model": model,
+            "preset": preset_id,
+            "temperature": float(temperature),
+            "max_tokens": int(max_tokens) if isinstance(max_tokens, int) else None,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "estimated_cost": float(estimated_cost) if isinstance(estimated_cost, (int, float)) else None,
+        }
+        if meta:
+            # Merge meta fields, without overwriting core keys.
+            for key, value in meta.items():
+                if key not in record:
+                    record[key] = value
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception:
+        # Logging must never break the UI.
+        pass
+
+
 class OpenRouterClient:
     """
     Minimal async client for OpenRouter.
@@ -95,15 +174,18 @@ class OpenRouterClient:
         self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not self.api_key:
             self.api_key = _load_api_key_from_env_file().strip()
-        if not self.api_key:
-            self.api_key = _load_api_key_from_env_file()
 
     def is_configured(self) -> bool:
         return bool(self.api_key)
 
-    async def summarize_function(self, code: str) -> str:
+    async def summarize_function(
+        self,
+        code: str,
+        preset_id: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
-        Generate a concise summary of a Python function.
+        Generate a concise summary of a Python function or execution path.
 
         This is intentionally simple and low-level; callers are responsible
         for threading / background execution so GUIs remain responsive.
@@ -120,10 +202,10 @@ class OpenRouterClient:
             "Content-Type": "application/json",
         }
 
-        body = {
+        body: Dict[str, Any] = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You summarize Python functions for developers."},
+                {"role": "system", "content": "You summarize Python functions and execution traces for developers."},
                 {"role": "user", "content": prompt},
             ],
             "temperature": self.temperature,
@@ -159,21 +241,31 @@ class OpenRouterClient:
                 in_cost = (in_tokens / 1_000_000.0) * price_info["input"]
                 out_cost = (out_tokens / 1_000_000.0) * price_info["output"]
                 total_cost = in_cost + out_cost
-                print(
-                    f"[OpenRouter] model={self.model} "
-                    f"prompt_tokens={in_tokens}, completion_tokens={out_tokens}, "
-                    f"estimated_cost=${total_cost:.6f} "
-                    f"(input=${in_cost:.6f}, output=${out_cost:.6f})"
-                )
+                estimated_cost: Optional[float] = total_cost
             else:
-                if in_tokens or out_tokens:
-                    print(
-                        f"[OpenRouter] model={self.model} "
-                        f"prompt_tokens={in_tokens}, completion_tokens={out_tokens} "
-                        f"(no price table entry; cost not estimated)"
-                    )
+                estimated_cost = None
+
+            _log_console_run(
+                model=self.model,
+                preset_id=preset_id,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                prompt_tokens=in_tokens,
+                completion_tokens=out_tokens,
+                estimated_cost=estimated_cost,
+            )
+            _log_file_run(
+                model=self.model,
+                preset_id=preset_id,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                prompt_tokens=in_tokens,
+                completion_tokens=out_tokens,
+                estimated_cost=estimated_cost,
+                meta=meta,
+            )
         except Exception:
-            # Cost estimation is best-effort only and should never break the UI.
+            # Logging and cost estimation are best-effort only and should never break the UI.
             pass
 
         try:

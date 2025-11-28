@@ -10,6 +10,7 @@ from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 from main_execution_tracer import MainExecutionTracer
 from .code_utils import find_enclosing_function, extract_source_segment
 from .llm_client import OpenRouterClient
+from .llm_config_store import load_llm_config, save_llm_config
 
 
 @dataclass
@@ -100,11 +101,53 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._function_calls: List[FunctionCallView] = []
         self._file_accesses: List[FileAccessView] = []
 
+        # LLM client and configuration
         self._llm_client = OpenRouterClient()
         self._llm_model_override: Optional[str] = None
         self._llm_max_tokens: Optional[int] = None
         self._llm_temperature: float = 0.1
         self._llm_prompt_template: Optional[str] = None
+
+        # LLM configuration (loaded from llm_config.json when available)
+        self._llm_config: Dict[str, Any] = load_llm_config()
+        self._llm_presets: Dict[str, Dict[str, str]] = self._llm_config.get("presets", {}) or {}
+
+        default_preset_id = self._llm_config.get("default_prompt_preset")
+        if not default_preset_id or default_preset_id not in self._llm_presets:
+            # Fallback to first preset ID if config is missing or invalid
+            default_preset_id = next(iter(self._llm_presets.keys())) if self._llm_presets else None
+        self._llm_current_preset_id: Optional[str] = default_preset_id
+
+        # Initialize overrides from config
+        config_model = self._llm_config.get("model")
+        if isinstance(config_model, str) and config_model:
+            self._llm_model_override = config_model
+
+        config_temp = self._llm_config.get("temperature")
+        if isinstance(config_temp, (int, float)):
+            self._llm_temperature = float(config_temp)
+
+        config_max_tokens = self._llm_config.get("max_tokens")
+        if isinstance(config_max_tokens, int):
+            self._llm_max_tokens = config_max_tokens
+
+        # Pick the current prompt template from the selected preset if available
+        if self._llm_current_preset_id and self._llm_current_preset_id in self._llm_presets:
+            self._llm_prompt_template = self._llm_presets[self._llm_current_preset_id].get("template")
+
+        # Apply initial configuration to the LLM client
+        if self._llm_model_override:
+            self._llm_client.model = self._llm_model_override
+        if self._llm_prompt_template:
+            self._llm_client.prompt_template = self._llm_prompt_template
+        if self._llm_max_tokens is not None:
+            self._llm_client.max_tokens = self._llm_max_tokens
+        self._llm_client.temperature = float(self._llm_temperature or 0.1)
+
+        # Track last-used LLM context for building summary headers
+        self._last_llm_kind: Optional[str] = None  # "function" or "path"
+        self._last_llm_model: Optional[str] = None
+        self._last_llm_preset_id: Optional[str] = None
 
         # Background workers
         self._trace_worker: Optional[_TraceWorker] = None
@@ -197,10 +240,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_button = QtWidgets.QPushButton(
             "Summarize Highlighted Function", summary_container
         )
+        self.summary_path_button = QtWidgets.QPushButton(
+            "Summarize Execution Path", summary_container
+        )
 
         summary_layout.addWidget(self.summary_label)
         summary_layout.addWidget(self.summary_text, stretch=1)
         summary_layout.addWidget(self.summary_button, stretch=0)
+        summary_layout.addWidget(self.summary_path_button, stretch=0)
 
         # Right side: container with label + code editor
         right_container = QtWidgets.QWidget(main_splitter)
@@ -228,6 +275,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
             self._on_left_tree_context_menu
         )
         self.summary_button.clicked.connect(self._on_summarize_clicked)
+        self.summary_path_button.clicked.connect(self._on_summarize_path_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
 
     # Public API ----------------------------------------------------------
@@ -283,6 +331,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.setDisabled(True)
         self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
         self.run_button.setDisabled(True)
 
         worker = _TraceWorker(codebase, command)
@@ -314,6 +363,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
+        self.summary_path_button.setDisabled(False)
         self.run_button.setDisabled(False)
 
         # Ensure the worker thread has fully finished before dropping our
@@ -442,6 +492,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Re-enable controls
         self.left_tree.setDisabled(False)
         self.summary_button.setDisabled(False)
+        self.summary_path_button.setDisabled(False)
         self.run_button.setDisabled(False)
 
         # Ensure the worker thread has fully finished before dropping our
@@ -790,6 +841,36 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 self.editor_label.setText(f"File: {rel_path}")
             return
 
+    def _apply_llm_overrides(self) -> None:
+        """
+        Apply the current UI/config LLM overrides to the client instance.
+        """
+        if self._llm_model_override:
+            self._llm_client.model = self._llm_model_override
+        self._llm_client.max_tokens = self._llm_max_tokens
+        self._llm_client.temperature = float(self._llm_temperature or 0.1)
+        if self._llm_prompt_template:
+            self._llm_client.prompt_template = self._llm_prompt_template
+
+    def _build_path_context(self) -> Optional[str]:
+        """
+        Build a textual representation of the current execution path suitable
+        for feeding into the LLM prompt {code} placeholder.
+        """
+        if not self._function_calls:
+            return None
+
+        lines: List[str] = []
+        lines.append("Execution call path (in order):")
+        for fc in self._function_calls:
+            label = f"{fc.file}::{fc.function}" if fc.file else fc.function
+            if fc.line:
+                label += f" (line {fc.line})"
+            label += f" depth={fc.depth}"
+            lines.append(f"  {fc.index:4d}. {label}")
+
+        return "\n".join(lines)
+
     def _on_summarize_clicked(self):
         code = self.editor.text()
         if not code.strip():
@@ -801,6 +882,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return
 
         self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
         self.summary_text.setPlainText("Requesting summary from OpenRouter...")
 
         if self._llm_worker is not None and self._llm_worker.isRunning():
@@ -808,14 +890,60 @@ class TraceViewerWidget(QtWidgets.QWidget):
             return
 
         # Apply any overrides from the settings dialog to the LLM client.
-        if self._llm_model_override:
-            self._llm_client.model = self._llm_model_override
-        self._llm_client.max_tokens = self._llm_max_tokens
-        self._llm_client.temperature = float(self._llm_temperature or 0.1)
-        if self._llm_prompt_template:
-            self._llm_client.prompt_template = self._llm_prompt_template
+        self._apply_llm_overrides()
 
-        worker = _LLMSummaryWorker(code, self._llm_client)
+        # Remember context for headers and logging
+        self._last_llm_kind = "function"
+        self._last_llm_model = self._llm_client.model
+        self._last_llm_preset_id = self._llm_current_preset_id
+
+        meta: Dict[str, Any] = {}
+        if self._current_codebase is not None:
+            meta["codebase"] = self._current_codebase.name
+        if self._current_command:
+            meta["command"] = self._current_command
+        meta["kind"] = "function"
+
+        worker = _LLMSummaryWorker(code, self._llm_client, self._last_llm_preset_id, meta)
+        worker.finished_with_result.connect(self._on_summary_finished)
+        worker.error_occurred.connect(self._on_summary_error)
+        self._llm_worker = worker
+        worker.start()
+
+    def _on_summarize_path_clicked(self):
+        context = self._build_path_context()
+        if not context:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Trace",
+                "There is no execution path to summarize. Run a trace first.",
+            )
+            return
+
+        self.summary_button.setDisabled(True)
+        self.summary_path_button.setDisabled(True)
+        self.summary_text.setPlainText("Requesting path summary from OpenRouter...")
+
+        if self._llm_worker is not None and self._llm_worker.isRunning():
+            # Avoid starting multiple concurrent LLM requests
+            return
+
+        # Apply any overrides from the settings dialog to the LLM client.
+        self._apply_llm_overrides()
+
+        # Remember context for headers and logging
+        self._last_llm_kind = "path"
+        self._last_llm_model = self._llm_client.model
+        self._last_llm_preset_id = self._llm_current_preset_id
+
+        meta: Dict[str, Any] = {}
+        if self._current_codebase is not None:
+            meta["codebase"] = self._current_codebase.name
+        if self._current_command:
+            meta["command"] = self._current_command
+        meta["kind"] = "path"
+
+        worker = _LLMSummaryWorker(context, self._llm_client, self._last_llm_preset_id, meta)
         worker.finished_with_result.connect(self._on_summary_finished)
         worker.error_occurred.connect(self._on_summary_error)
         self._llm_worker = worker
@@ -823,11 +951,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _on_summary_finished(self, text: str):
         self.summary_button.setDisabled(False)
-        self.summary_text.setPlainText(text)
+        self.summary_path_button.setDisabled(False)
+
+        # Build a small header describing what was summarized and with which settings.
+        kind_label = "Function" if self._last_llm_kind == "function" else "Path"
+        model = self._last_llm_model or self._llm_client.model
+        preset = self._last_llm_preset_id or "-"
+        header = f"[{kind_label}] model={model} preset={preset}"
+
+        self.summary_text.setPlainText(f"{header}\n\n{text}")
         self._llm_worker = None
 
     def _on_summary_error(self, message: str):
         self.summary_button.setDisabled(False)
+        self.summary_path_button.setDisabled(False)
         self.summary_text.setPlainText(message)
         self._llm_worker = None
 
@@ -894,6 +1031,47 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 self._llm_worker.quit()
                 self._llm_worker.wait()
             self._llm_worker = None
+
+    def persist_llm_settings(
+        self,
+        model: Optional[str],
+        max_tokens: Optional[int],
+        temperature: float,
+        preset_id: Optional[str],
+        prompt_template: str,
+    ) -> None:
+        """
+        Update in-memory LLM settings and persist them to llm_config.json.
+        """
+        if model:
+            self._llm_model_override = model
+        else:
+            self._llm_model_override = None
+
+        self._llm_max_tokens = max_tokens
+        self._llm_temperature = float(temperature)
+        self._llm_prompt_template = prompt_template or None
+
+        if preset_id and preset_id in self._llm_presets:
+            self._llm_current_preset_id = preset_id
+            # Update the preset's template with any edits from the dialog
+            self._llm_presets[preset_id]["template"] = prompt_template
+
+        # Build config object for saving
+        config = dict(self._llm_config or {})
+        if self._llm_model_override:
+            config["model"] = self._llm_model_override
+        if self._llm_max_tokens is not None:
+            config["max_tokens"] = int(self._llm_max_tokens)
+        else:
+            config["max_tokens"] = None
+        config["temperature"] = float(self._llm_temperature)
+        if self._llm_current_preset_id:
+            config["default_prompt_preset"] = self._llm_current_preset_id
+        config["presets"] = self._llm_presets
+
+        save_llm_config(config)
+        self._llm_config = config
 
 
 class _TraceWorker(QtCore.QThread):
@@ -1239,17 +1417,27 @@ class _LLMSummaryWorker(QtCore.QThread):
     finished_with_result = QtCore.pyqtSignal(str)
     error_occurred = QtCore.pyqtSignal(str)
 
-    def __init__(self, code: str, client: OpenRouterClient):
+    def __init__(
+        self,
+        code: str,
+        client: OpenRouterClient,
+        preset_id: Optional[str],
+        meta: Optional[Dict[str, Any]],
+    ):
         super().__init__()
         self._code = code
         self._client = client
+        self._preset_id = preset_id
+        self._meta = meta or {}
 
     def run(self):
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                text = loop.run_until_complete(self._client.summarize_function(self._code))
+                text = loop.run_until_complete(
+                    self._client.summarize_function(self._code, preset_id=self._preset_id, meta=self._meta)
+                )
             finally:
                 loop.close()
             self.finished_with_result.emit(text)
