@@ -7,7 +7,7 @@ from .trace_viewer import TraceViewerWidget
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_codebase: Path | None = None):
         super().__init__()
 
         self.setWindowTitle("Execution Trace Viewer")
@@ -15,6 +15,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.viewer = TraceViewerWidget(self)
         self.setCentralWidget(self.viewer)
+
+        # If an initial codebase was provided (e.g. from run_trcr.sh / global
+        # "trcr" symlink), configure the viewer with that folder immediately.
+        if initial_codebase is not None:
+            self.viewer.set_codebase(initial_codebase)
 
         self._create_actions()
         self._create_menu()
