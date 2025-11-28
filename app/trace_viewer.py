@@ -239,7 +239,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         top_left_layout.addWidget(self.left_tree, stretch=1)
 
         # Bottom-left: summary area
-        summary_container = QtWidgets.QWidget(left_splitter)
+        summary_container = QtWidgets.QWidget(self.left_splitter)
         summary_layout = QtWidgets.QVBoxLayout(summary_container)
         summary_layout.setContentsMargins(4, 4, 4, 4)
         summary_layout.setSpacing(4)
