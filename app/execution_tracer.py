@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Main Execution Tracer
+Execution tracer engine for arbitrary Python codebases.
 
-This tracer properly executes VGMini's main logic by simulating the
-if __name__ == "__main__" condition to capture complete execution.
+This module is responsible for building and running the temporary tracing
+script that captures function execution order and file I/O. It is used by
+the Qt GUI (TraceViewerWidget) and can also be invoked as a standalone
+CLI tool.
 """
 
 import os
