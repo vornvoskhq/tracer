@@ -101,6 +101,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._file_accesses: List[FileAccessView] = []
 
         self._llm_client = OpenRouterClient()
+        self._llm_model_override: Optional[str] = None
+        self._llm_max_tokens: Optional[int] = None
+        self._llm_temperature: float = 0.1
+        self._llm_prompt_template: Optional[str] = None
 
         # Background workers
         self._trace_worker: Optional[_TraceWorker] = None
@@ -802,6 +806,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if self._llm_worker is not None and self._llm_worker.isRunning():
             # Avoid starting multiple concurrent LLM requests
             return
+
+        # Apply any overrides from the settings dialog to the LLM client.
+        if self._llm_model_override:
+            self._llm_client.model = self._llm_model_override
+        self._llm_client.max_tokens = self._llm_max_tokens
+        self._llm_client.temperature = float(self._llm_temperature or 0.1)
+        if self._llm_prompt_template:
+            self._llm_client.prompt_template = self._llm_prompt_template
 
         worker = _LLMSummaryWorker(code, self._llm_client)
         worker.finished_with_result.connect(self._on_summary_finished)

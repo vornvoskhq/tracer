@@ -66,6 +66,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_toggle_import_rows
         )
 
+        # LLM settings dialog
+        self.action_llm_settings = QtWidgets.QAction("LLM &Summary Settings...", self)
+        self.action_llm_settings.triggered.connect(self._on_llm_settings)
+
     def _create_menu(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self.action_open_codebase)
@@ -78,6 +82,8 @@ class MainWindow(QtWidgets.QMainWindow):
         config_menu.addAction(self.action_toggle_caller_column)
         config_menu.addAction(self.action_toggle_phase_column)
         config_menu.addAction(self.action_toggle_import_rows)
+        config_menu.addSeparator()
+        config_menu.addAction(self.action_llm_settings)
 
     # Slots ---------------------------------------------------------------
 
@@ -118,6 +124,86 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if hasattr(self.viewer, "set_import_rows_hidden"):
             self.viewer.set_import_rows_hidden(checked)
+
+    def _on_llm_settings(self):
+        """
+        Open a simple dialog allowing the user to configure LLM summary settings.
+        """
+        if not hasattr(self.viewer, "_llm_client"):
+            return
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("LLM Summary Settings")
+
+        layout = QtWidgets.QFormLayout(dlg)
+
+        # Model
+        model_edit = QtWidgets.QLineEdit(dlg)
+        current_model = getattr(self.viewer, "_llm_model_override", None) or getattr(
+            self.viewer._llm_client, "model", ""
+        )
+        model_edit.setText(current_model)
+        layout.addRow("Model ID:", model_edit)
+
+        # Max tokens
+        max_tokens_edit = QtWidgets.QLineEdit(dlg)
+        if getattr(self.viewer, "_llm_max_tokens", None) is not None:
+            max_tokens_edit.setText(str(self.viewer._llm_max_tokens))
+        layout.addRow("Max tokens (optional):", max_tokens_edit)
+
+        # Temperature
+        temperature_edit = QtWidgets.QLineEdit(dlg)
+        temperature_edit.setText(str(getattr(self.viewer, "_llm_temperature", 0.1)))
+        layout.addRow("Temperature:", temperature_edit)
+
+        # Prompt template
+        prompt_edit = QtWidgets.QPlainTextEdit(dlg)
+        current_prompt = getattr(self.viewer, "_llm_prompt_template", None)
+        if not current_prompt:
+            # Fall back to the client's current template for display
+            current_prompt = getattr(self.viewer._llm_client, "prompt_template", "")
+        prompt_edit.setPlainText(current_prompt)
+        layout.addRow("Prompt template (use {code} placeholder):", prompt_edit)
+
+        # Buttons
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dlg,
+        )
+        layout.addRow(button_box)
+
+        def _on_accept():
+            # Apply changes back to the viewer; the next summarize call will
+            # push these into the LLM client.
+            self.viewer._llm_model_override = model_edit.text().strip() or None
+
+            max_tokens_text = max_tokens_edit.text().strip()
+            if max_tokens_text:
+                try:
+                    self.viewer._llm_max_tokens = max(0, int(max_tokens_text))
+                except ValueError:
+                    self.viewer._llm_max_tokens = None
+            else:
+                self.viewer._llm_max_tokens = None
+
+            temp_text = temperature_edit.text().strip()
+            try:
+                self.viewer._llm_temperature = float(temp_text)
+            except ValueError:
+                self.viewer._llm_temperature = 0.1
+
+            prompt_text = prompt_edit.toPlainText().strip()
+            self.viewer._llm_prompt_template = prompt_text or None
+
+            dlg.accept()
+
+        def _on_reject():
+            dlg.reject()
+
+        button_box.accepted.connect(_on_accept)
+        button_box.rejected.connect(_on_reject)
+
+        dlg.exec_()
 
     def closeEvent(self, event):
         """
