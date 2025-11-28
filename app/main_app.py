@@ -391,9 +391,10 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.viewer._ui_state = dict(cfg.get("ui") or {})
             except Exception:
                 pass
-            dlg.reject()
 
         button_box.accepted.connect(_on_accept)
+        # Ensure the Cancel button actually closes the dialog.
+        button_box.rejected.connect(dlg.reject)
         # Route all dialog rejections (Cancel button, ESC, window close \"X\") through
         # a single handler so the dialog size is always persisted.
         dlg.rejected.connect(_on_reject)
