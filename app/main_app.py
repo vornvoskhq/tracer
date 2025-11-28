@@ -71,6 +71,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_llm_settings = QtWidgets.QAction("LLM &Summary Settings...", self)
         self.action_llm_settings.triggered.connect(self._on_llm_settings)
 
+        # Verbose LLM logging toggle
+        self.action_llm_verbose_logging = QtWidgets.QAction("Verbose &LLM Logging", self)
+        self.action_llm_verbose_logging.setCheckable(True)
+        if hasattr(self, "viewer") and hasattr(self.viewer, "_llm_verbose_logging"):
+            self.action_llm_verbose_logging.setChecked(bool(self.viewer._llm_verbose_logging))
+        self.action_llm_verbose_logging.toggled.connect(self._on_toggle_llm_verbose_logging)
+
     def _create_menu(self):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self.action_open_codebase)
@@ -85,6 +92,7 @@ class MainWindow(QtWidgets.QMainWindow):
         config_menu.addAction(self.action_toggle_import_rows)
         config_menu.addSeparator()
         config_menu.addAction(self.action_llm_settings)
+        config_menu.addAction(self.action_llm_verbose_logging)
 
     # Slots ---------------------------------------------------------------
 
@@ -126,6 +134,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.viewer, "set_import_rows_hidden"):
             self.viewer.set_import_rows_hidden(checked)
 
+    def _on_toggle_llm_verbose_logging(self, checked: bool):
+        """
+        Toggle verbose LLM logging (whether to include full file contents in logs).
+        """
+        if hasattr(self.viewer, "_llm_verbose_logging"):
+            self.viewer._llm_verbose_logging = bool(checked)
+        # Update config via the viewer helper so it is persisted.
+        if hasattr(self.viewer, "save_ui_state"):
+            self.viewer.save_ui_state()
+
     def _on_llm_settings(self):
         """
         Open a dialog allowing the user to configure LLM summary settings.
@@ -135,6 +153,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("LLM Summary Settings")
+
+        # Restore last dialog size if we have one stored in config.
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        ui_state = cfg.get("ui") or {}
+        dlg_size = ui_state.get("llm_dialog_size")
+        if isinstance(dlg_size, list) and len(dlg_size) == 2:
+            try:
+                w, h = int(dlg_size[0]), int(dlg_size[1])
+                if w > 0 and h > 0:
+                    dlg.resize(w, h)
+            except Exception:
+                pass
 
         layout = QtWidgets.QFormLayout(dlg)
 
@@ -322,7 +352,7 @@ class MainWindow(QtWidgets.QMainWindow):
             temperature_value = slider_value / 100.0
 
             # Prompt template
-            prompt_text = prompt_edit.toPlainText().strip()
+            prompt_text = prompt_edit.toPlainText()
 
             # Determine selected preset ID (if any)
             index = prompt_combo.currentIndex()
@@ -341,9 +371,32 @@ class MainWindow(QtWidgets.QMainWindow):
                     prompt_template=prompt_text,
                 )
 
+            # Persist dialog size for next time.
+            try:
+                size = dlg.size()
+                cfg = getattr(self.viewer, "_llm_config", {}) or {}
+                ui_state = dict(cfg.get("ui") or {})
+                ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
+                cfg["ui"] = ui_state
+                save_llm_config(cfg)
+                self.viewer._llm_config = cfg
+            except Exception:
+                pass
+
             dlg.accept()
 
         def _on_reject():
+            # Persist dialog size even on cancel so the layout is sticky.
+            try:
+                size = dlg.size()
+                cfg = getattr(self.viewer, "_llm_config", {}) or {}
+                ui_state = dict(cfg.get("ui") or {})
+                ui_state["llm_dialog_size"] = [int(size.width()), int(size.height())]
+                cfg["ui"] = ui_state
+                save_llm_config(cfg)
+                self.viewer._llm_config = cfg
+            except Exception:
+                pass
             dlg.reject()
 
         button_box.accepted.connect(_on_accept)

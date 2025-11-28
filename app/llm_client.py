@@ -224,31 +224,34 @@ def _log_file_pretty_run(
         kind = "-"
         codebase = "-"
         command = "-"
+        verbose_flag = False
         if meta:
             kind = str(meta.get("kind", kind))
             codebase = str(meta.get("codebase", codebase))
             command = str(meta.get("command", command))
+            verbose_flag = bool(meta.get("verbose_logging", False))
 
         prompt_text = prompt or ""
         response_text = response or ""
 
+        # Compact header in a single logical block.
+        header_line = (
+            f"time={ts_local} | model={model} | preset={preset_display} | kind={kind} | "
+            f"codebase={codebase} | temp={temperature:.2f} | max_tok={max_tok_display} | "
+            f"in={prompt_tokens} | out={completion_tokens} | dur={dur_display} | cost={cost_display}"
+        )
+
         block_lines: list[str] = []
         block_lines.append("=== LLM RUN ===")
-        block_lines.append(f"time:     {ts_local}")
-        block_lines.append(f"model:    {model}")
-        block_lines.append(f"preset:   {preset_display}")
-        block_lines.append(f"kind:     {kind}")
-        block_lines.append(f"codebase: {codebase}")
+        block_lines.append(header_line)
         if command and command != "-":
-            block_lines.append(f"command:  {command}")
-        block_lines.append(
-            f"temp: {temperature:.2f}  max_tok: {max_tok_display}  "
-            f"in: {prompt_tokens}  out: {completion_tokens}  dur: {dur_display}  cost: {cost_display}"
-        )
+            block_lines.append(f"command={command}")
         block_lines.append("")
 
-        # For entrypoint discovery logs, avoid dumping all code; instead log the
-        # original instructions and a concise list of files that were included.
+        # For entrypoint discovery logs, avoid dumping all code when verbose
+        # logging is disabled. Instead log the original instructions and a
+        # concise list of files that were included. When verbose logging is
+        # enabled, append the full context as well.
         if kind == "entrypoints":
             header = prompt_text
             marker = "Project file snippets:"
@@ -276,6 +279,11 @@ def _log_file_pretty_run(
                     block_lines.append(f"  - {fpath}")
             else:
                 block_lines.append("  (no files parsed from context)")
+
+            if verbose_flag:
+                block_lines.append("")
+                block_lines.append("FULL CONTEXT:")
+                block_lines.append(prompt_text)
         else:
             block_lines.append("PROMPT:")
             block_lines.append(prompt_text)

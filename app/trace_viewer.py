@@ -118,6 +118,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
             default_preset_id = next(iter(self._llm_presets.keys())) if self._llm_presets else None
         self._llm_current_preset_id: Optional[str] = default_preset_id
 
+        # Verbose logging flag controls whether prompts/responses are written
+        # in detail to the LLM log file. Default is False to keep logs compact.
+        self._llm_verbose_logging: bool = bool(self._llm_config.get("verbose_logging", False))
+
+        # UI state: splitter sizes and dialog sizes may be stored in config under
+        # a top-level "ui" key. We keep a local copy and apply it once the UI
+        # widgets are constructed.
+        self._ui_state: Dict[str, Any] = dict(self._llm_config.get("ui", {}) or {})
+
         # Initialize overrides from config
         config_model = self._llm_config.get("model")
         if isinstance(config_model, str) and config_model:
@@ -160,11 +169,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _build_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)
-        main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
-        main_layout.addWidget(main_splitter)
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
+        main_layout.addWidget(self.main_splitter)
 
         # Left side: vertical split (top: controls + execution + I/O, bottom: summary)
-        left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, main_splitter)
+        left_splitter = self.left_splitter
 
         # Top-left container: codebase label, command row, combined function execution and file I/O
         top_left = QtWidgets.QWidget(left_splitter)
@@ -270,7 +279,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         summary_layout.addLayout(buttons_row)
 
         # Right side: container with label + code editor
-        right_container = QtWidgets.QWidget(main_splitter)
+        right_container = QtWidgets.QWidget(self.main_splitter)
         right_layout = QtWidgets.QVBoxLayout(right_container)
         right_layout.setContentsMargins(4, 4, 4, 4)
         right_layout.setSpacing(4)
@@ -282,11 +291,21 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.editor = CodeEditor(right_container)
         right_layout.addWidget(self.editor, stretch=1)
 
-        # Adjust splitter sizes: make summary vertically smaller
-        main_splitter.setStretchFactor(0, 0)
-        main_splitter.setStretchFactor(1, 1)
-        left_splitter.setStretchFactor(0, 5)
-        left_splitter.setStretchFactor(1, 1)
+        # Adjust splitter sizes: make summary vertically smaller. If we have
+        # persisted sizes in the config, prefer those over the default stretch
+        # factors so that the layout is restored across runs.
+        if self._ui_state:
+            main_sizes = self._ui_state.get("main_splitter_sizes")
+            if isinstance(main_sizes, list) and all(isinstance(x, int) for x in main_sizes):
+                self.main_splitter.setSizes(main_sizes)
+            left_sizes = self._ui_state.get("left_splitter_sizes")
+            if isinstance(left_sizes, list) and all(isinstance(x, int) for x in left_sizes):
+                self.left_splitter.setSizes(left_sizes)
+        else:
+            self.main_splitter.setStretchFactor(0, 0)
+            self.main_splitter.setStretchFactor(1, 1)
+            left_splitter.setStretchFactor(0, 5)
+            left_splitter.setStretchFactor(1, 1)
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
@@ -994,6 +1013,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if self._current_command:
             meta["command"] = self._current_command
         meta["kind"] = "function"
+        meta["verbose_logging"] = bool(getattr(self, "_llm_verbose_logging", False))
 
         worker = _LLMSummaryWorker(code, self._llm_client, self._last_llm_preset_id, meta)
         worker.finished_with_result.connect(self._on_summary_finished)
@@ -1039,6 +1059,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if self._current_command:
             meta["command"] = self._current_command
         meta["kind"] = "path"
+        meta["verbose_logging"] = bool(getattr(self, "_llm_verbose_logging", False))
 
         worker = _LLMSummaryWorker(context, self._llm_client, self._last_llm_preset_id, meta)
         worker.finished_with_result.connect(self._on_summary_finished)
@@ -1086,6 +1107,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if self._current_command:
             meta["command"] = self._current_command
         meta["kind"] = "entrypoints"
+        meta["verbose_logging"] = bool(getattr(self, "_llm_verbose_logging", False))
 
         worker = _LLMSummaryWorker(context, self._llm_client, preset_id, meta)
         worker.finished_with_result.connect(self._on_summary_finished)
@@ -1189,6 +1211,26 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 self._llm_worker.wait()
             self._llm_worker = None
 
+    def save_ui_state(self) -> None:
+        """
+        Persist current splitter sizes and verbose logging flag into llm_config.json.
+        """
+        config = dict(self._llm_config or {})
+        config["verbose_logging"] = bool(self._llm_verbose_logging)
+
+        ui_state = dict(self._ui_state or {})
+        if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
+            try:
+                ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
+                ui_state["left_splitter_sizes"] = self.left_splitter.sizes()
+            except Exception:
+                pass
+        config["ui"] = ui_state
+
+        save_llm_config(config)
+        self._llm_config = config
+        self._ui_state = ui_state
+
     def _on_llm_config_button_clicked(self) -> None:
         """
         Open the LLM Summary Settings dialog via the parent main window.
@@ -1237,6 +1279,18 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if self._llm_current_preset_id:
             config["default_prompt_preset"] = self._llm_current_preset_id
         config["presets"] = self._llm_presets
+
+        # Preserve existing UI and verbose logging settings.
+        config["verbose_logging"] = bool(self._llm_verbose_logging)
+        ui_state = dict(self._ui_state or {})
+        # Capture current splitter sizes so the layout is restored on next run.
+        if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
+            try:
+                ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
+                ui_state["left_splitter_sizes"] = self.left_splitter.sizes()
+            except Exception:
+                pass
+        config["ui"] = ui_state
 
         save_llm_config(config)
         self._llm_config = config

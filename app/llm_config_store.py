@@ -95,6 +95,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_tokens": 512,
     "default_prompt_preset": "concise-tech",
     "presets": DEFAULT_PRESETS,
+    # Whether to log full LLM context (including file contents) to the LLM log.
+    # When False, entrypoint logs only include instructions + file list.
+    "verbose_logging": False,
+    # Optional UI state; these keys may or may not be present in user configs.
+    # They are included here only to document expected structure.
+    # "ui": {
+    #     "main_splitter_sizes": [600, 600],
+    #     "left_splitter_sizes": [400, 200],
+    #     "llm_dialog_size": [800, 600],
+    # },
 }
 
 
@@ -136,9 +146,15 @@ def load_llm_config() -> Dict[str, Any]:
     presets = config.get("presets") or {}
     merged_presets: Dict[str, Dict[str, str]] = {}
 
+    # Normalize templates so that any \"\\n\" sequences become real newlines for
+    # easier editing in the LLM config dialog.
+    def _normalize_template(t: str) -> str:
+        return t.replace("\\\\n", "\n")
+
     # Start with defaults
     for pid, pconf in DEFAULT_PRESETS.items():
-        merged_presets[pid] = dict(pconf)
+        tmpl = _normalize_template(str(pconf.get("template", "{code}")))
+        merged_presets[pid] = {"label": str(pconf.get("label", pid)), "template": tmpl}
 
     # Overlay any presets from config (allowing user overrides / additions)
     if isinstance(presets, dict):
@@ -147,7 +163,8 @@ def load_llm_config() -> Dict[str, Any]:
                 continue
             # Keep only label/template keys to avoid surprises
             label = str(pconf.get("label", pid))
-            template = str(pconf.get("template", DEFAULT_PRESETS.get(pid, {}).get("template", "{code}")))
+            raw_template = str(pconf.get("template", DEFAULT_PRESETS.get(pid, {}).get("template", "{code}")))
+            template = _normalize_template(raw_template)
             merged_presets[pid] = {"label": label, "template": template}
 
     config["presets"] = merged_presets
