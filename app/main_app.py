@@ -193,7 +193,9 @@ class MainWindow(QtWidgets.QMainWindow):
         current_model = getattr(self.viewer, "_llm_model_override", None) or getattr(
             self.viewer._llm_client, "model", ""
         )
-        if current_model and current_model not in default_models:
+        # Ensure the current model appears in the list even if it was not
+        # present in the stored configuration.
+        if current_model and current_model not in cfg_models:
             model_combo.addItem(current_model)
         if current_model:
             idx = model_combo.findText(current_model)
@@ -306,8 +308,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # push these into the LLM client and be persisted to app_config.json.
 
             # Model
-            model_text = model_combo.currentText().strip() or _code
-            # Max tokens
+            model_text = model_combo.currentText().strip() or None
+            # Max to_code
             max_tokens_value: Optional[int]
             max_tokens_text = max_tokens_edit.text().strip()
             if max_tokens_text:
@@ -397,10 +399,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """
-        Ensure background threads are stopped cleanly before the app exits.
+        Ensure background threads are stopped cleanly before the app exits,
+        and persist the current UI layout (splitter sizes, etc.) to the
+        shared app_config.json file.
         """
-        if hasattr(self.viewer, "cleanup_threads"):
-            self.viewer.cleanup_threads()
+        if hasattr(self, "viewer"):
+            if hasattr(self.viewer, "save_ui_state"):
+                try:
+                    self.viewer.save_ui_state()
+                except Exception:
+                    pass
+            if hasattr(self.viewer, "cleanup_threads"):
+                self.viewer.cleanup_threads()
         event.accept()
 
 
