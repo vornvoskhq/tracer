@@ -1023,6 +1023,62 @@ class _TraceWorker(QtCore.QThread):
                     fc.index = new_index
                 return reordered
 
+            def _inject_entrypoint_row(calls: List[FunctionCallView]) -> List[FunctionCallView]:
+                """
+                Insert a synthetic entrypoint row at the top of the execution order.
+
+                This ensures that the GUI always shows the detected entry script
+                (e.g. vgmini.py) as the first row, even when no function calls are
+                recorded from that file (for example when it only imports and
+                delegates into src/ modules).
+                """
+                entry_point = getattr(tracer, "entry_point", None)
+                if not entry_point or not calls:
+                    return calls
+
+                entry_name = Path(entry_point).name
+
+                # Try to reuse an existing call from the entrypoint module if we have one.
+                existing_idx = None
+                for i, fc in enumerate(calls):
+                    if Path(fc.file).name == entry_name:
+                        existing_idx = i
+                        break
+
+                new_calls: List[FunctionCallView] = []
+
+                if existing_idx is not None:
+                    # Use the earliest recorded call from the entrypoint module as the root.
+                    entry_call = calls[existing_idx]
+                    entry_call.index = 1
+                    entry_call.depth = 0
+                    new_calls.append(entry_call)
+
+                    remaining = calls[:existing_idx] + calls[existing_idx + 1 :]
+                    for new_index, fc in enumerate(remaining, start=2):
+                        fc.index = new_index
+                        fc.depth = max(fc.depth + 1, 0)
+                        new_calls.append(fc)
+                    return new_calls
+
+                # Otherwise, synthesize a module-level entry row.
+                synthetic = FunctionCallView(
+                    index=1,
+                    file=entry_point,
+                    function="<module>",
+                    line=0,
+                    depth=0,
+                    kind="Module",
+                )
+                new_calls.append(synthetic)
+
+                for new_index, fc in enumerate(calls, start=2):
+                    fc.index = new_index
+                    fc.depth = max(fc.depth + 1, 0)
+                    new_calls.append(fc)
+
+                return new_calls
+
             # Build function execution order from full call records if available
             calls_raw: List[Dict[str, Any]] = getattr(trace, "calls", []) or []
             if calls_raw:
@@ -1133,6 +1189,10 @@ class _TraceWorker(QtCore.QThread):
 
             # Re-order so the entrypoint module appears first in the execution order.
             function_calls = _reorder_by_entrypoint(function_calls)
+
+            # Inject an explicit entrypoint row so the GUI always shows the
+            # entry script (e.g. vgmini.py) as the root of execution.
+            function_calls = _inject_entrypoint_row(function_calls)
 
             # External file I/O with filtering (unchanged)
             file_accesses_raw: List[Dict[str, Any]] = getattr(trace, "file_accesses", []) or []
