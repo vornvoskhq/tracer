@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -82,6 +83,7 @@ def _log_console_run(
     prompt_tokens: int,
     completion_tokens: int,
     estimated_cost: Optional[float],
+    duration_s: Optional[float] = None,
 ) -> None:
     """
     Emit a compact, single-line summary of an LLM call to the console.
@@ -92,6 +94,10 @@ def _log_console_run(
         cost_display = "NA"
     else:
         cost_display = f"${estimated_cost:.6f}"
+    if isinstance(duration_s, (int, float)):
+        dur_display = f"{duration_s:.2f}s"
+    else:
+        dur_display = "-"
 
     print(
         "LLM | "
@@ -101,7 +107,8 @@ def _log_console_run(
         f"max_tok={max_tok_display} | "
         f"in={prompt_tokens} | "
         f"out={completion_tokens} | "
-        f"cost={cost_display}"
+        f"cost={cost_display} | "
+        f"dur={dur_display}"
     )
 
 
@@ -114,6 +121,9 @@ def _log_file_run(
     prompt_tokens: int,
     completion_tokens: int,
     estimated_cost: Optional[float],
+    duration_s: Optional[float] = None,
+    prompt: Optional[str] = None,
+    response: Optional[str] = None,
     meta: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
@@ -127,16 +137,34 @@ def _log_file_run(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "llm_runs.jsonl"
 
+        # Shorter timestamp (no microseconds) to keep lines readable.
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        # Round cost to a reasonable precision so the value is stable and compact.
+        if isinstance(estimated_cost, (int, float)):
+            est_cost_val: Optional[float] = round(float(estimated_cost), 6)
+        else:
+            est_cost_val = None
+
         record: Dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": ts,
             "model": model,
             "preset": preset_id,
             "temperature": float(temperature),
             "max_tokens": int(max_tokens) if isinstance(max_tokens, int) else None,
             "prompt_tokens": int(prompt_tokens),
             "completion_tokens": int(completion_tokens),
-            "estimated_cost": float(estimated_cost) if isinstance(estimated_cost, (int, float)) else None,
+            "estimated_cost": est_cost_val,
         }
+
+        if isinstance(duration_s, (int, float)):
+            record["duration_s"] = round(float(duration_s), 3)
+
+        if prompt is not None:
+            record["prompt"] = prompt
+        if response is not None:
+            record["response"] = response
+
         if meta:
             # Merge meta fields, without overwriting core keys.
             for key, value in meta.items():
@@ -213,6 +241,7 @@ class OpenRouterClient:
         if self.max_tokens is not None and self.max_tokens > 0:
             body["max_tokens"] = int(self.max_tokens)
 
+        start_ts = time.time()
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.post(
@@ -223,14 +252,24 @@ class OpenRouterClient:
                 ) as resp:
                     text = await resp.text()
                     if resp.status != 200:
-                        return f"OpenRouter error {resp.status}: {text[:400]}"
+                        # Include a small hint for debugging model-specific issues.
+                        return f"OpenRouter error {resp.status} for model {self.model}: {text[:400]}"
                     data = await resp.json()
             except asyncio.TimeoutError:
                 return "OpenRouter request timed out."
             except Exception as exc:
                 return f"OpenRouter request failed: {exc}"
 
-        # Best-effort cost estimation based on token usage (if available)
+        duration_s = time.time() - start_ts
+
+        # Extract response text, if available, before logging.
+        result_text: Optional[str] = None
+        try:
+            result_text = data["choices"][0]["message"]["content"]
+        except Exception:
+            result_text = None
+
+        # Best-effort cost estimation and logging based on token usage (if available)
         try:
             usage = data.get("usage") or {}
             in_tokens = int(usage.get("prompt_tokens", 0) or 0)
@@ -253,6 +292,7 @@ class OpenRouterClient:
                 prompt_tokens=in_tokens,
                 completion_tokens=out_tokens,
                 estimated_cost=estimated_cost,
+                duration_s=duration_s,
             )
             _log_file_run(
                 model=self.model,
@@ -262,13 +302,19 @@ class OpenRouterClient:
                 prompt_tokens=in_tokens,
                 completion_tokens=out_tokens,
                 estimated_cost=estimated_cost,
+                duration_s=duration_s,
+                prompt=prompt,
+                response=(result_text or ""),
                 meta=meta,
             )
         except Exception:
             # Logging and cost estimation are best-effort only and should never break the UI.
             pass
 
-        try:
-            return data["choices"][0]["message"]["content"].strip()
-        except Exception:
+        if result_text is not None:
+            try:
+                return result_text.strip()
+            except Exception:
+                return str(result_text)
+        else:
             return "Unexpected response format from OpenRouter."
