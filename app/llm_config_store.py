@@ -134,6 +134,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "ui": {
         "main_splitter_sizes": [600, 600],
         "left_splitter_sizes": [400, 200],
+        # Default column widths for the left execution/I-O tree.
+        "left_tree_column_widths": [14, 40, 40, 70, 70, 140, 210, 170, 60],
         "llm_dialog_size": [800, 600],
     },
 }

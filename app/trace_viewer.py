@@ -176,9 +176,15 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Left side: vertical split (top: controls + execution + I/O, bottom: summary)
         self.left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self.main_splitter)
+        # Allow the left pane to collapse as far as the user wants.
+        self.left_splitter.setMinimumWidth(0)
+        self.left_splitter.setCollapsible(0, True)
+        self.left_splitter.setCollapsible(1, True)
 
         # Top-left container: codebase label, command row, combined function execution and file I/O
         top_left = QtWidgets.QWidget(self.left_splitter)
+        # Permit the container to shrink to zero width so the splitter is not constrained.
+        top_left.setMinimumWidth(0)
         top_left_layout = QtWidgets.QVBoxLayout(top_left)
         top_left_layout.setContentsMargins(4, 4, 4, 4)
         top_left_layout.setSpacing(4)
@@ -199,6 +205,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Combined function execution and file I/O tree
         self.left_tree = QtWidgets.QTreeWidget(top_left)
+        # Allow the tree itself to shrink as much as needed; the user can rely
+        # on horizontal scrolling when columns no longer fit.
+        self.left_tree.setMinimumWidth(0)
         # Columns:
         #   0: (indent)
         #   1: Order
@@ -215,7 +224,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.left_tree.setHeaderLabels(
             ["", "Order", "Depth", "Kind", "Phase", "Caller", "File", "Function", "Line/Mode"]
         )
-        # Approximate column widths based on expected content:
+        # Approximate default column widths based on expected content:
         # - indent: tiny
         # - Order: up to 3 digits
         # - Depth: small integer
@@ -225,15 +234,27 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # - File: "src/experiment_configs.py"
         # - Function: "VisualizationConfig"
         # - Line/Mode: 3-digit line or short mode
-        self.left_tree.setColumnWidth(0, 14)   # indent
-        self.left_tree.setColumnWidth(1, 40)   # Order (3 digits)
-        self.left_tree.setColumnWidth(2, 40)   # Depth
-        self.left_tree.setColumnWidth(3, 70)   # Kind
-        self.left_tree.setColumnWidth(4, 70)   # Phase
-        self.left_tree.setColumnWidth(5, 140)  # Caller
-        self.left_tree.setColumnWidth(6, 210)  # File
-        self.left_tree.setColumnWidth(7, 170)  # Function
-        self.left_tree.setColumnWidth(8, 60)   # Line/Mode
+        default_col_widths = [14, 40, 40, 70, 70, 140, 210, 170, 60]
+        for idx, w in enumerate(default_col_widths):
+            if idx < self.left_tree.columnCount():
+                self.left_tree.setColumnWidth(idx, w)
+        # Enable interactive column resizing with a small minimum so the user
+        # can compress the left pane without hitting an artificial floor.
+        header = self.left_tree.header()
+        header.setMinimumSectionSize(20)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        # Prefer smooth horizontal scrolling when columns overflow.
+        self.left_tree.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        # If we have persisted column widths in the UI state, apply them now.
+        col_widths = self._ui_state.get("left_tree_column_widths")
+        if isinstance(col_widths, list):
+            for idx, w in enumerate(col_widths):
+                if (
+                    isinstance(w, int)
+                    and w > 0
+                    and idx < self.left_tree.columnCount()
+                ):
+                    self.left_tree.setColumnWidth(idx, w)
         # Enable a custom context menu so we can offer "Copy tree to clipboard"
         self.left_tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         top_left_layout.addWidget(self.left_tree, stretch=1)
@@ -282,6 +303,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Right side: container with label + code editor
         right_container = QtWidgets.QWidget(self.main_splitter)
+        right_container.setMinimumWidth(0)
         right_layout = QtWidgets.QVBoxLayout(right_container)
         right_layout.setContentsMargins(4, 4, 4, 4)
         right_layout.setSpacing(4)
@@ -292,6 +314,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.editor = CodeEditor(right_container)
         right_layout.addWidget(self.editor, stretch=1)
+
+        # Allow both sides of the main splitter to be collapsible so the user can
+        # make the left or right pane as narrow as they wish.
+        self.main_splitter.setCollapsible(0, True)
+        self.main_splitter.setCollapsible(1, True)
 
         # Adjust splitter sizes: make summary vertically smaller. If we have
         # persisted sizes in the config, prefer those over the default stretch
@@ -1215,7 +1242,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def save_ui_state(self) -> None:
         """
-        Persist current splitter sizes and verbose logging flag into llm_config.json.
+        Persist current splitter sizes, column widths, and verbose logging flag
+        into app_config.json.
         """
         config = dict(self._llm_config or {})
         config["verbose_logging"] = bool(self._llm_verbose_logging)
@@ -1225,6 +1253,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
             try:
                 ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
                 ui_state["left_splitter_sizes"] = self.left_splitter.sizes()
+            except Exception:
+                pass
+        if hasattr(self, "left_tree"):
+            try:
+                col_count = self.left_tree.columnCount()
+                ui_state["left_tree_column_widths"] = [
+                    self.left_tree.columnWidth(i) for i in range(col_count)
+                ]
             except Exception:
                 pass
         config["ui"] = ui_state
@@ -1285,11 +1321,19 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Preserve existing UI and verbose logging settings.
         config["verbose_logging"] = bool(self._llm_verbose_logging)
         ui_state = dict(self._ui_state or {})
-        # Capture current splitter sizes so the layout is restored on next run.
+        # Capture current splitter sizes so the layout and columns are restored on next run.
         if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
             try:
                 ui_state["main_splitter_sizes"] = self.main_splitter.sizes()
                 ui_state["left_splitter_sizes"] = self.left_splitter.sizes()
+            except Exception:
+                pass
+        if hasattr(self, "left_tree"):
+            try:
+                col_count = self.left_tree.columnCount()
+                ui_state["left_tree_column_widths"] = [
+                    self.left_tree.columnWidth(i) for i in range(col_count)
+                ]
             except Exception:
                 pass
         config["ui"] = ui_state
