@@ -882,11 +882,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
         """
         Build a textual representation of the current execution path suitable
         for feeding into the LLM prompt {code} placeholder.
+
+        We include a brief instruction asking the model to be concise so that
+        responses are more likely to fit within the configured token budget.
         """
         if not self._function_calls:
             return None
 
         lines: List[str] = []
+        lines.append(
+            "Instruction: Provide a concise, high-level summary of this execution "
+            "path that fits within the response token budget. Avoid repetition "
+            "and unnecessary detail."
+        )
+        lines.append("")
         lines.append("Execution call path (in order):")
         for fc in self._function_calls:
             label = f"{fc.file}::{fc.function}" if fc.file else fc.function
@@ -1013,6 +1022,11 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         # Apply any overrides from the settings dialog to the LLM client.
         self._apply_llm_overrides()
+
+        # For path summaries, allow a larger completion budget: use twice the
+        # configured max_tokens if one is set, otherwise leave as-is.
+        if self._llm_max_tokens is not None and self._llm_max_tokens > 0:
+            self._llm_client.max_tokens = self._llm_max_tokens * 2
 
         # Remember context for headers and logging
         self._last_llm_kind = "path"
