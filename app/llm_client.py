@@ -1,23 +1,66 @@
 import asyncio
 import os
+from pathlib import Path
 from typing import Optional
 
 import aiohttp
 
 
-DEFAULT_MODEL = "mistral/mistral-small-latest"
+DEFAULT_MODEL = "openai/gpt-4o-mini"
+
+
+def _load_api_key_from_env_file() -> str:
+    """
+    Best-effort loader for OPENROUTER_API_KEY from a local .env file.
+
+    This avoids adding a python-dotenv dependency while still supporting the
+    common pattern of storing the key in a .env file at the project root.
+    """
+    candidates = []
+
+    # Current working directory .env
+    cwd_env = Path.cwd() / ".env"
+    candidates.append(cwd_env)
+
+    # Repository-root .env (one level up from this file's directory)
+    try:
+        repo_root_env = Path(__file__).resolve().parent.parent / ".env"
+        if repo_root_env not in candidates:
+            candidates.append(repo_root_env)
+    except Exception:
+        pass
+
+    for env_path in candidates:
+        if not env_path.exists():
+            continue
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                if key.strip() == "OPENROUTER_API_KEY":
+                    return value.strip().strip('"').strip("'")
+        except OSError:
+            continue
+
+    return ""
 
 
 class OpenRouterClient:
     """
     Minimal async client for OpenRouter.
 
-    Expects OPENROUTER_API_KEY to be set in the environment.
+    Expects OPENROUTER_API_KEY to be set in the environment or in a .env file.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL):
-        self.model = model
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
+    def __init__(self, model: Optional[str] = None):
+        env_model = os.getenv("OPENROUTER_MODEL", "").strip()
+        self.model = model or env_model or DEFAULT_MODEL
+
+        self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        if not self.api_key:
+            self.api_key = _load_api_key_from_env_file()
 
     def is_configured(self) -> bool:
         return bool(self.api_key)
