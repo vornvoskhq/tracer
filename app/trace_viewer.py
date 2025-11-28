@@ -287,20 +287,19 @@ class TraceViewerWidget(QtWidgets.QWidget):
         )
         self.summary_config_button.setToolTip("Open LLM Summary Settings")
 
-        summary_layout.addWidget(self.summary_label)
-        summary_layout.addWidget(self.summary_text, stretch=1)
+        # Compact header row: label on the left, all LLM actions on the right.
+        header_row = QtWidgets.QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(6)
+        header_row.addWidget(self.summary_label)
+        header_row.addStretch(1)
+        header_row.addWidget(self.summary_button)
+        header_row.addWidget(self.summary_path_button)
+        header_row.addWidget(self.summary_entrypoints_button)
+        header_row.addWidget(self.summary_config_button)
+        summary_layout.addLayout(header_row)
 
-        # Place all LLM actions on a single horizontal row to minimize vertical
-        # space and make the primary actions equally visible.
-        buttons_row = QtWidgets.QHBoxLayout()
-        buttons_row.setContentsMargins(0, 0, 0, 0)
-        buttons_row.setSpacing(6)
-        buttons_row.addWidget(self.summary_button)
-        buttons_row.addWidget(self.summary_path_button)
-        buttons_row.addWidget(self.summary_entrypoints_button)
-        buttons_row.addStretch(1)
-        buttons_row.addWidget(self.summary_config_button)
-        summary_layout.addLayout(buttons_row)
+        summary_layout.addWidget(self.summary_text, stretch=1)
 
         # Right side: container with label + code editor
         right_container = QtWidgets.QWidget(self.main_splitter)

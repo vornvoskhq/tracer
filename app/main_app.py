@@ -93,8 +93,10 @@ class MainWindow(QtWidgets.QMainWindow):
         config_menu.addAction(self.action_toggle_phase_column)
         config_menu.addAction(self.action_toggle_import_rows)
         config_menu.addSeparator()
-        config_menu.addAction(self.action_llm_settings)
+        # Place verbose logging before the settings dialog so that
+        # "LLM Summary Settings..." appears last in the menu.
         config_menu.addAction(self.action_llm_verbose_logging)
+        config_menu.addAction(self.action_llm_settings)
 
     # Slots ---------------------------------------------------------------
 
@@ -155,18 +157,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("LLM Summary Settings")
-
-        # Restore last dialog size if we have one stored in config.
-        cfg = getattr(self.viewer, "_llm_config", {}) or {}
-        ui_state = cfg.get("ui") or {}
-        dlg_size = ui_state.get("llm_dialog_size")
-        if isinstance(dlg_size, list) and len(dlg_size) == 2:
-            try:
-                w, h = int(dlg_size[0]), int(dlg_size[1])
-                if w > 0 and h > 0:
-                    dlg.resize(w, h)
-            except Exception:
-                pass
 
         layout = QtWidgets.QFormLayout(dlg)
 
@@ -292,7 +282,8 @@ class MainWindow(QtWidgets.QMainWindow):
         prompt_combo.currentIndexChanged.connect(_on_preset_changed)
 
         layout.addRow("Prompt preset:", prompt_combo)
-        layout.addRow("Prompt template (use {code} placeholder):", prompt_edit)
+        # Use a two-line label so the dialog header does not stretch excessively.
+        layout.addRow("Prompt template\n(use {code} placeholder):", prompt_edit)
 
         # ------------------------------------------------------------------
         # Buttons
@@ -401,6 +392,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         button_box.accepted.connect(_on_accept)
         button_box.rejected.connect(_on_reject)
+
+        # Restore last dialog size if we have one stored in config, after the
+        # layout is constructed so Qt honors the requested size.
+        try:
+            cfg = getattr(self.viewer, "_llm_config", {}) or {}
+            ui_state = cfg.get("ui") or {}
+            dlg_size = ui_state.get("llm_dialog_size")
+            if isinstance(dlg_size, list) and len(dlg_size) == 2:
+                w, h = int(dlg_size[0]), int(dlg_size[1])
+                if w > 0 and h > 0:
+                    dlg.resize(w, h)
+        except Exception:
+            pass
 
         dlg.exec_()
 
