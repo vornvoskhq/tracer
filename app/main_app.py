@@ -5,13 +5,14 @@ from typing import Optional
 from PyQt5 import QtCore, QtWidgets
 
 from .trace_viewer import TraceViewerWidget
-from .llm_config_store import save_llm_config
+from .llm_config_store import save_llm_config, DEFAULT_CONFIG
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, initial_codebase: Path | None = None):
         super().__init__()
 
+        # Basic window properties; size will be adjusted if persisted UI config is present.
         self.setWindowTitle("Execution Trace Viewer")
         self.resize(1200, 800)
 
@@ -176,7 +177,7 @@ class MainWindow(QtWidgets.QMainWindow):
         model_combo.setEditable(True)
 
         # Load the list of known models from the shared app config, falling
-        # back to a reasonable hard-coded set if none is stored yet.
+        # back to the DEFAULT_CONFIG models if none are stored yet.
         cfg_models = []
         try:
             cfg_models = list((cfg.get("models") or []))  # type: ignore[assignment]
@@ -184,44 +185,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cfg_models = []
 
         if not cfg_models:
-            cfg_models = [
-                # OpenAI
-                "openai/gpt-4o-mini",
-                "openai/gpt-4o",
-
-                # General auto-routing
-                "openrouter/auto",
-
-                # Mistral
-                "mistralai/mistral-small",
-                "mistralai/mistral-nemo",
-
-                # Anthropic
-                "anthropic/claude-3.5-haiku",
-                "anthropic/claude-3-haiku-20240307",
-
-                # Google Gemini (note: may be less stable in some environments)
-                "google/gemini-1.5-flash",
-
-                # Meta Llama 3.1
-                "meta-llama/llama-3.1-8b-instruct",
-                "meta-llama/llama-3.1-70b-instruct",
-
-                # Cohere
-                "cohere/command-r-plus",
-
-                # Qwen (Alibaba)
-                "qwen/qwen-2.5-7b-instruct",
-                "qwen/qwen-plus",
-
-                # DeepSeek (China)
-                "deepseek/deepseek-chat",
-                "deepseek/deepseek-r1",
-
-                # Moonshot / Kimi
-                "moonshotai/kimi-k2",
-                "moonshotai/kimi-k2-thinking",
-            ]
+            cfg_models = list(DEFAULT_CONFIG.get("models", []))
 
         for m in cfg_models:
             model_combo.addItem(str(m))
