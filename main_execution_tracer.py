@@ -1001,10 +1001,13 @@ if __name__ == "__main__":
         """
         Trace VGMini command with proper main execution.
         """
-        print(f"🔍 Tracing: {command}")
-        print(f"📁 Codebase: {self.codebase_name} ({self.target_dir})")
-        print(f"🎯 Entry Point: {self.entry_point}")
-        print(f"🐍 Using Python: {self.target_python}")
+        # Compact summary of what is being traced, to reduce console clutter.
+        print(
+            f"TRACE | cmd={command} | "
+            f"codebase={self.codebase_name} | "
+            f"entry={self.entry_point} | "
+            f"python={self.target_python}"
+        )
         
         # Parse command
         cmd_parts = command.strip().split()
@@ -1033,8 +1036,6 @@ if __name__ == "__main__":
         error_output = ""
         
         try:
-            print(f"🚀 Starting {self.codebase_name} with main execution...")
-            
             # Run the tracer script using target's Python
             process = subprocess.Popen(
                 [self.target_python, script_path],

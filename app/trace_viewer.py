@@ -722,8 +722,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
         dlg = QtWidgets.QMessageBox(self)
         dlg.setWindowTitle("Call Stack")
         dlg.setIcon(QtWidgets.QMessageBox.Information)
-        dlg.setText("Call stack (from entrypoint to selected row):")
-        dlg.setDetailedText(text)
+        # Show the entire call stack directly in the main text so there is no
+        # extra click required to reveal the details.
+        dlg.setText(text or "No call stack available.")
         dlg.setStandardButtons(QtWidgets.QMessageBox.Ok)
         dlg.exec_()
 
