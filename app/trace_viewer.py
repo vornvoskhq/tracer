@@ -169,14 +169,16 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
     def _build_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)
+
+        # Main horizontal splitter: left (trees + summary) vs right (code editor)
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
         main_layout.addWidget(self.main_splitter)
 
         # Left side: vertical split (top: controls + execution + I/O, bottom: summary)
-        left_splitter = self.left_splitter
+        self.left_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical, self.main_splitter)
 
         # Top-left container: codebase label, command row, combined function execution and file I/O
-        top_left = QtWidgets.QWidget(left_splitter)
+        top_left = QtWidgets.QWidget(self.left_splitter)
         top_left_layout = QtWidgets.QVBoxLayout(top_left)
         top_left_layout.setContentsMargins(4, 4, 4, 4)
         top_left_layout.setSpacing(4)
@@ -304,8 +306,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
         else:
             self.main_splitter.setStretchFactor(0, 0)
             self.main_splitter.setStretchFactor(1, 1)
-            left_splitter.setStretchFactor(0, 5)
-            left_splitter.setStretchFactor(1, 1)
+            self.left_splitter.setStretchFactor(0, 5)
+            self.left_splitter.setStretchFactor(1, 1)
 
     def _connect_signals(self):
         self.left_tree.itemClicked.connect(self._on_left_item_clicked)
