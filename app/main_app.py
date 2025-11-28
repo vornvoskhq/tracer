@@ -144,18 +144,46 @@ class MainWindow(QtWidgets.QMainWindow):
         model_combo = QtWidgets.QComboBox(dlg)
         model_combo.setEditable(True)
 
-        # A small set of low-cost / reasonable models for summarization.
+        # A set of low-cost / reasonable models for summarization. This list is
+        # only a convenience for the UI; you can always type any valid
+        # OpenRouter model ID manually.
         default_models = [
+            # OpenAI
             "openai/gpt-4o-mini",
             "openai/gpt-4o",
+
+            # General auto-routing
             "openrouter/auto",
+
+            # Mistral
             "mistralai/mistral-small",
             "mistralai/mistral-nemo",
+
+            # Anthropic
             "anthropic/claude-3.5-haiku",
+            "anthropic/claude-3-haiku-20240307",
+
+            # Google Gemini (note: may be less stable in some environments)
             "google/gemini-1.5-flash",
+
+            # Meta Llama 3.1
             "meta-llama/llama-3.1-8b-instruct",
             "meta-llama/llama-3.1-70b-instruct",
+
+            # Cohere
             "cohere/command-r-plus",
+
+            # Qwen (Alibaba)
+            "qwen/qwen-2.5-7b-instruct",
+            "qwen/qwen-plus",
+
+            # DeepSeek (China)
+            "deepseek/deepseek-chat",
+            "deepseek/deepseek-r1",
+
+            # Moonshot / Kimi
+            "moonshotai/kimi-k2",
+            "moonshotai/kimi-k2-thinking",
         ]
         for m in default_models:
             model_combo.addItem(m)
