@@ -178,6 +178,87 @@ def _log_file_run(
         pass
 
 
+def _log_file_pretty_run(
+    *,
+    model: str,
+    preset_id: Optional[str],
+    temperature: float,
+    max_tokens: Optional[int],
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: Optional[float],
+    duration_s: Optional[float] = None,
+    prompt: Optional[str] = None,
+    response: Optional[str] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Append a human-readable record of an LLM call to logs/llm_runs_pretty.log.
+
+    This log is designed to be easy to read in a terminal (e.g. via less),
+    preserving line breaks in the prompt and response.
+    """
+    try:
+        root = Path(__file__).resolve().parent.parent
+        log_dir = root / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "llm_runs_pretty.log"
+
+        # Local time for easier human inspection
+        ts_local = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
+
+        preset_display = preset_id or "-"
+        max_tok_display = str(max_tokens) if isinstance(max_tokens, int) and max_tokens > 0 else "-"
+        if isinstance(estimated_cost, (int, float)):
+            cost_display = f"{estimated_cost:.6f}"
+        else:
+            cost_display = "NA"
+
+        if isinstance(duration_s, (int, float)):
+            dur_display = f"{duration_s:.3f}s"
+        else:
+            dur_display = "-"
+
+        kind = "-"
+        codebase = "-"
+        command = "-"
+        if meta:
+            kind = str(meta.get("kind", kind))
+            codebase = str(meta.get("codebase", codebase))
+            command = str(meta.get("command", command))
+
+        prompt_text = prompt or ""
+        response_text = response or ""
+
+        block_lines: list[str] = []
+        block_lines.append("=== LLM RUN ===")
+        block_lines.append(f"time:     {ts_local}")
+        block_lines.append(f"model:    {model}")
+        block_lines.append(f"preset:   {preset_display}")
+        block_lines.append(f"kind:     {kind}")
+        block_lines.append(f"codebase: {codebase}")
+        if command and command != "-":
+            block_lines.append(f"command:  {command}")
+        block_lines.append(
+            f"temp: {temperature:.2f}  max_tok: {max_tok_display}  "
+            f"in: {prompt_tokens}  out: {completion_tokens}  dur: {dur_display}  cost: {cost_display}"
+        )
+        block_lines.append("")
+        block_lines.append("PROMPT:")
+        block_lines.append(prompt_text)
+        block_lines.append("")
+        block_lines.append("RESPONSE:")
+        block_lines.append(response_text)
+        block_lines.append("")
+        block_lines.append("")
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(block_lines))
+    except Exception:
+        # Logging must never break the UI.
+        pass
+
+
 class OpenRouterClient:
     """
     Minimal async client for OpenRouter.
@@ -295,6 +376,19 @@ class OpenRouterClient:
                 duration_s=duration_s,
             )
             _log_file_run(
+                model=self.model,
+                preset_id=preset_id,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                prompt_tokens=in_tokens,
+                completion_tokens=out_tokens,
+                estimated_cost=estimated_cost,
+                duration_s=duration_s,
+                prompt=prompt,
+                response=(result_text or ""),
+                meta=meta,
+            )
+            _log_file_pretty_run(
                 model=self.model,
                 preset_id=preset_id,
                 temperature=self.temperature,
