@@ -355,8 +355,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_button.setDisabled(True)
         self.summary_path_button.setDisabled(True)
         self.summary_entrypoints_button.setDisabled(True)
-        self.run_button.setDisabled(Trunewe</)
-e)
+        self.run_button.setDisabled(True)
 
         worker = _TraceWorker(codebase, command)
         worker.finished_with_result.connect(self._on_trace_finished)
