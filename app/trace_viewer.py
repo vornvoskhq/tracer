@@ -235,7 +235,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.summary_label = QtWidgets.QLabel("LLM Summary", summary_container)
         self.summary_label.setStyleSheet("font-weight: bold;")
-        self.summary_text = QtWidgets.QPlainTextEdit(summary_container)
+        # Use a rich-text editor so that Markdown coming back from the LLM
+        # (e.g. headings, bullet lists, code blocks) is easier to read.
+        self.summary_text = QtWidgets.QTextEdit(summary_container)
         self.summary_text.setReadOnly(True)
         self.summary_button = QtWidgets.QPushButton(
             "Summarize Highlighted Function", summary_container
@@ -890,7 +892,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.summary_button.setDisabled(True)
         self.summary_path_button.setDisabled(True)
-        self.summary_text.setPlainText("Requesting summary from OpenRouter...")
+        self.summary_text.setMarkdown("Requesting summary from OpenRouter...")
 
         if self._llm_worker is not None and self._llm_worker.isRunning():
             # Avoid starting multiple concurrent LLM requests
@@ -929,7 +931,7 @@ class TraceViewerWidget(QtWidgets.QWidget):
 
         self.summary_button.setDisabled(True)
         self.summary_path_button.setDisabled(True)
-        self.summary_text.setPlainText("Requesting path summary from OpenRouter...")
+        self.summary_text.setMarkdown("Requesting path summary from OpenRouter...")
 
         if self._llm_worker is not None and self._llm_worker.isRunning():
             # Avoid starting multiple concurrent LLM requests
@@ -964,14 +966,17 @@ class TraceViewerWidget(QtWidgets.QWidget):
         kind_label = "Function" if self._last_llm_kind == "function" else "Path"
         model = self._last_llm_model or self._llm_client.model
         preset = self._last_llm_preset_id or "-"
-        header = f"[{kind_label}] model={model} preset={preset}"
+        header = f"**[{kind_label}]** `model={model}` `preset={preset}`"
 
-        self.summary_text.setPlainText(f"{header}\n\n{text}")
+        # Treat the body as Markdown so headings, lists, and code blocks are rendered.
+        combined = f"{header}\n\n{text}"
+        self.summary_text.setMarkdown(combined)
         self._llm_worker = None
 
     def _on_summary_error(self, message: str):
         self.summary_button.setDisabled(False)
         self.summary_path_button.setDisabled(False)
+        # Errors are simple text; render them as-is.
         self.summary_text.setPlainText(message)
         self._llm_worker = None
 
