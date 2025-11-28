@@ -8,7 +8,7 @@ from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 
 from .execution_tracer import MainExecutionTracer
-from .code_utils import find_enclosing_function, extract_source_seg_codeent
+from .code_utils import find_enclosing_function, extract_source_segment
 from .llm_client import OpenRouterClient
 from .llm_config_store import load_llm_config, save_llm_config
 
