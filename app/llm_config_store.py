@@ -244,6 +244,15 @@ def load_llm_config() -> Dict[str, Any]:
 
     config["presets"] = merged_presets
 
+    # Ensure we always have a non-empty model list in memory. If the loaded
+    # app_config.json did not define "models" (or defined an empty list), seed
+    # it from DEFAULT_CONFIG once. This value will be written back to
+    # app_config.json on the next save, and from then on the file is the
+    # single source of truth for the model list.
+    models = config.get("models")
+    if not isinstance(models, list) or not models:
+        config["models"] = list(DEFAULT_CONFIG.get("models", []))
+
     # Ensure default_prompt_preset is valid
     default_preset = config.get("default_prompt_preset")
     if default_preset not in merged_presets:
