@@ -118,14 +118,13 @@ class TraceViewerWidget(QtWidgets.QWidget):
             default_preset_id = next(iter(self._llm_presets.keys())) if self._llm_presets else None
         self._llm_current_preset_id: Optional[str] = default_preset_id
 
-        # Verbose logging flag controls whether prompts/responses are written
-        # in detail to the LLM log file. Default is False to keep logs compact.
-        self._llm_verbose_logging: bool = bool(self._llm_config.get("verbose_logging", False))
-
-        # UI state: splitter sizes and dialog sizes may be stored in config under
-        # a top-level "ui" key. We keep a local copy and apply it once the UI
-        # widgets are constructed.
+        # UI state: splitter sizes, dialog sizes, and viewer flags are stored
+        # under the "ui" key in app_config.json.
         self._ui_state: Dict[str, Any] = dict(self._llm_config.get("ui", {}) or {})
+
+        # Verbose logging flag controls whether prompts/responses are written
+        # in detail to the LLM log file. It is stored inside the ui section.
+        self._llm_verbose_logging: bool = bool(self._ui_state.get("verbose_logging", False))
 
         # Initialize overrides from config
         config_model = self._llm_config.get("model")
@@ -1241,7 +1240,6 @@ class TraceViewerWidget(QtWidgets.QWidget):
         into app_config.json.
         """
         config = dict(self._llm_config or {})
-        config["verbose_logging"] = bool(self._llm_verbose_logging)
 
         # Start from whatever UI state is currently stored in the config so we
         # do not drop keys such as "llm_dialog_size" that may have been written
@@ -1250,6 +1248,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if isinstance(self._llm_config, dict):
             base_ui = dict(self._llm_config.get("ui") or {})
         ui_state = base_ui
+
+        # Persist verbose logging inside the ui section.
+        ui_state["verbose_logging"] = bool(self._llm_verbose_logging)
 
         if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):
             try:
@@ -1320,9 +1321,6 @@ class TraceViewerWidget(QtWidgets.QWidget):
             config["default_prompt_preset"] = self._llm_current_preset_id
         config["presets"] = self._llm_presets
 
-        # Preserve existing UI and verbose logging settings.
-        config["verbose_logging"] = bool(self._llm_verbose_logging)
-
         # Start from whatever UI state is currently stored in the config so we
         # do not drop keys such as "llm_dialog_size" that may have been written
         # by the main window.
@@ -1330,6 +1328,9 @@ class TraceViewerWidget(QtWidgets.QWidget):
         if isinstance(self._llm_config, dict):
             base_ui = dict(self._llm_config.get("ui") or {})
         ui_state = base_ui
+
+        # Ensure verbose logging is persisted inside the ui section.
+        ui_state["verbose_logging"] = bool(self._llm_verbose_logging)
 
         # Capture current splitter sizes so the layout and columns are restored on next run.
         if hasattr(self, "main_splitter") and hasattr(self, "left_splitter"):

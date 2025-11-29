@@ -118,14 +118,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # app_config.json["models"]. We keep this empty here so there is a single
     # source of truth on disk.
     "models": [],
-    # Whether to log full LLM context (including file contents) to the LLM log.
-    # When False, entrypoint logs only include instructions + file list.
-    "verbose_logging": False,
-    # Column / row visibility settings in the trace view. These are toggled via
-    # the Config menu and persisted at the top level next to verbose_logging.
-    "show_caller_column": True,
-    "show_phase_column": False,
-    "hide_import_rows": False,
     # Optional UI state; these keys may or may not be present in user configs.
     # They are included here only to document expected structure.
     "ui": {
@@ -134,6 +126,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Default column widths for the left execution/I-O tree.
         "left_tree_column_widths": [14, 40, 40, 70, 70, 140, 210, 170, 60],
         "llm_dialog_size": [800, 600],
+        # The following keys, when present, are treated as user-configurable:
+        # - verbose_logging: bool
+        # - show_caller_column: bool
+        # - show_phase_column: bool
+        # - hide_import_rows: bool
     },
 }
 
@@ -175,10 +172,6 @@ def load_llm_config() -> Dict[str, Any]:
                     "default_prompt_preset",
                     "presets",
                     "models",
-                    "verbose_logging",
-                    "show_caller_column",
-                    "show_phase_column",
-                    "hide_import_rows",
                     "ui",
                 ):
                     if key in raw:

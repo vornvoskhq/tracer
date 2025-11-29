@@ -40,11 +40,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_quit.triggered.connect(self.close)
 
         # Config menu actions
-        # Load persisted config for initial toggle states, falling back to defaults.
+        # Load persisted config for initial toggle states from the ui section.
         cfg = getattr(self.viewer, "_llm_config", {}) or {}
-        show_caller = bool(cfg.get("show_caller_column", True))
-        show_phase = bool(cfg.get("show_phase_column", False))
-        hide_imports = bool(cfg.get("hide_import_rows", False))
+        ui_state = dict(cfg.get("ui") or {})
+        show_caller = bool(ui_state.get("show_caller_column", True))
+        show_phase = bool(ui_state.get("show_phase_column", False))
+        hide_imports = bool(ui_state.get("hide_import_rows", False))
 
         self.action_toggle_caller_column = QtWidgets.QAction(
             "Show &Caller Column", self
@@ -129,9 +130,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if hasattr(self.viewer, "set_caller_column_visible"):
             self.viewer.set_caller_column_visible(checked)
-        # Persist to config
+        # Persist to config (inside ui section)
         cfg = getattr(self.viewer, "_llm_config", {}) or {}
-        cfg["show_caller_column"] = bool(checked)
+        ui_state = dict(cfg.get("ui") or {})
+        ui_state["show_caller_column"] = bool(checked)
+        cfg["ui"] = ui_state
         save_llm_config(cfg)
         self.viewer._llm_config = cfg
 
@@ -143,7 +146,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.viewer, "set_phase_column_visible"):
             self.viewer.set_phase_column_visible(checked)
         cfg = getattr(self.viewer, "_llm_config", {}) or {}
-        cfg["show_phase_column"] = bool(checked)
+        ui_state = dict(cfg.get("ui") or {})
+        ui_state["show_phase_column"] = bool(checked)
+        cfg["ui"] = ui_state
         save_llm_config(cfg)
         self.viewer._llm_config = cfg
 
@@ -155,7 +160,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.viewer, "set_import_rows_hidden"):
             self.viewer.set_import_rows_hidden(checked)
         cfg = getattr(self.viewer, "_llm_config", {}) or {}
-        cfg["hide_import_rows"] = bool(checked)
+        ui_state = dict(cfg.get("ui") or {})
+        ui_state["hide_import_rows"] = bool(checked)
+        cfg["ui"] = ui_state
         save_llm_config(cfg)
         self.viewer._llm_config = cfg
 
