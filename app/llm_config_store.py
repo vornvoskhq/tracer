@@ -67,22 +67,41 @@ DEFAULT_PRESETS: Dict[str, Dict[str, str]] = {
             "```"
         ),
     },
+    "refactor-ai-mess": {
+        "label": "Refactor AI-generated / overcomplex code",
+        "template": (
+            "You are an expert Python engineer. Review the following function or execution slice, which was likely "
+            "generated or heavily edited by AI. Provide a concise analysis that covers:\n"
+            "- Where the structure is overcomplicated, redundant, or over-abstracted\n"
+            "- Any dead code, unused branches, or unnecessary configuration flags\n"
+            "- Any use of synthetic or fallback data paths that should be removed or made explicit "
+            "(for technical analysis software, there must be no hidden fake data).\n\n"
+            "Then propose a refactor plan:\n"
+            "- How to simplify while preserving behavior and data integrity\n"
+            "- Which pieces can safely be deleted vs. just reorganized\n"
+            "- A short checklist of steps to get from the current version to a cleaner one\n\n"
+            "Function source or trace context:\n"
+            "```python\n"
+            "{code}\n"
+            "```"
+        ),
+    },
     "entrypoints": {
         "label": "Suggest entry points",
         "template": (
             "You are helping a developer understand a new, black-box Python codebase. "
-            "You will be given snippets from many .py files in this project.\\n\\n"
-            "Your tasks:\\n"
-            "- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\n"
+            "You will be given snippets from many .py files in this project.\\\\n\\\\n"
+            "Your tasks:\\\\n"
+            "- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\\\n"
             "- For each candidate entrypoint, briefly explain why it is likely an entrypoint "
             "(e.g., has an if __name__ == '__main__' block, defines a main() that parses CLI args, "
-            "or is clearly the starting script).\\n"
+            "or is clearly the starting script).\\\\n"
             "- If there appears to be a thin wrapper script that quickly hands off control to a deeper module "
-            "or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\n"
-            "- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\n\\n"
-            "Project file snippets:\\n"
-            "```text\\n"
-            "{code}\\n"
+            "or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\\\n"
+            "- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\\\n\\\\n"
+            "Project file snippets:\\\\n"
+            "```text\\\\n"
+            "{code}\\\\n"
             "```"
         ),
     },
@@ -95,40 +114,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_tokens": 512,
     "default_prompt_preset": "concise-tech",
     "presets": DEFAULT_PRESETS,
-    # List of LLM model IDs to show in the settings UI combo box.
-    # This can be edited by the user and is persisted in app_config.json.
-    "models": [
-        # OpenAI
-        "openai/gpt-4o-mini",
-        "openai/gpt-4o",
-        # General auto-routing
-        "openrouter/auto",
-        # Mistral
-        "mistralai/mistral-small",
-        "mistralai/mistral-nemo",
-        # Anthropic
-        "anthropic/claude-3.5-haiku",
-        "anthropic/claude-3-haiku-20240307",
-        # Google Gemini
-        "google/gemini-1.5-flash",
-        # Meta Llama 3.1
-        "meta-llama/llama-3.1-8b-instruct",
-        "meta-llama/llama-3.1-70b-instruct",
-        # Cohere
-        "cohere/command-r-plus",
-        # Qwen (Alibaba)
-        "qwen/qwen-2.5-7b-instruct",
-        "qwen/qwen-plus",
-        # DeepSeek
-        "deepseek/deepseek-chat",
-        "deepseek/deepseek-r1",
-        # Moonshot / Kimi
-        "moonshotai/kimi-k2",
-        "moonshotai/kimi-k2-thinking",
-    ],
-    # Whether to log full LLM context (including file contents) to the LLM log.
-    # When False, entrypoint logs only include instructions + file list.
-    "verbose_logging": False,
+    # The list of LLM model IDs is user-configurable and stored only in
+    # app_config.json["models"]. We keep this empty here so there is a single
+    # source of truth on disk.
+    "models": [],
     # Optional UI state; these keys may or may not be present in user configs.
     # They are included here only to document expected structure.
     "ui": {
@@ -137,6 +126,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Default column widths for the left execution/I-O tree.
         "left_tree_column_widths": [14, 40, 40, 70, 70, 140, 210, 170, 60],
         "llm_dialog_size": [800, 600],
+        # The following keys, when present, are treated as user-configurable:
+        # - verbose_logging: bool
+        # - show_caller_column: bool
+        # - show_phase_column: bool
+        # - hide_import_rows: bool
     },
 }
 
@@ -178,7 +172,6 @@ def load_llm_config() -> Dict[str, Any]:
                     "default_prompt_preset",
                     "presets",
                     "models",
-                    "verbose_logging",
                     "ui",
                 ):
                     if key in raw:
@@ -191,10 +184,18 @@ def load_llm_config() -> Dict[str, Any]:
     presets = config.get("presets") or {}
     merged_presets: Dict[str, Dict[str, str]] = {}
 
-    # Normalize templates so that any \"\\n\" sequences become real newlines for
-    # easier editing in the LLM config dialog.
+    # Normalize templates so that any stored newline escape sequences become
+    # real newlines for easier editing in the LLM config dialog.
+    #
+    # This is conservative on purpose:
+    #   - It preserves real newlines already present in strings.
+    #   - It only converts explicit "\n" and "\r\n" escape sequences.
     def _normalize_template(t: str) -> str:
-        return t.replace("\\\\n", "\n")
+        # Collapse Windows-style escape sequences to "\n"
+        t = t.replace("\\r\\n", "\\n")
+        # Turn explicit "\n" escapes into real newlines
+        t = t.replace("\\n", "\n")
+        return t
 
     # Start with defaults
     for pid, pconf in DEFAULT_PRESETS.items():
@@ -273,6 +274,19 @@ def save_llm_config(config: Dict[str, Any]) -> None:
     verbose_logging = config.get("verbose_logging")
     if isinstance(verbose_logging, bool):
         to_save["verbose_logging"] = verbose_logging
+
+    # Column / row visibility toggles
+    show_caller_column = config.get("show_caller_column")
+    if isinstance(show_caller_column, bool):
+        to_save["show_caller_column"] = show_caller_column
+
+    show_phase_column = config.get("show_phase_column")
+    if isinstance(show_phase_column, bool):
+        to_save["show_phase_column"] = show_phase_column
+
+    hide_import_rows = config.get("hide_import_rows")
+    if isinstance(hide_import_rows, bool):
+        to_save["hide_import_rows"] = hide_import_rows
 
     # UI state (splitter sizes, dialog sizes, etc.)
     ui_state = config.get("ui")

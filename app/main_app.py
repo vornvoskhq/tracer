@@ -40,34 +40,50 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_quit.triggered.connect(self.close)
 
         # Config menu actions
+        # Load persisted config for initial toggle states from the ui section.
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        ui_state = dict(cfg.get("ui") or {})
+        show_caller = bool(ui_state.get("show_caller_column", True))
+        show_phase = bool(ui_state.get("show_phase_column", False))
+        hide_imports = bool(ui_state.get("hide_import_rows", False))
+
         self.action_toggle_caller_column = QtWidgets.QAction(
             "Show &Caller Column", self
         )
         self.action_toggle_caller_column.setCheckable(True)
-        self.action_toggle_caller_column.setChecked(True)
-        # Toggle visibility of the Caller column in the trace viewer
+        # Connect before setting the checked state so the viewer updates immediately.
         self.action_toggle_caller_column.toggled.connect(
             self._on_toggle_caller_column
         )
+        self.action_toggle_caller_column.setChecked(show_caller)
 
         self.action_toggle_phase_column = QtWidgets.QAction(
             "Show &Phase Column", self
         )
         self.action_toggle_phase_column.setCheckable(True)
-        # Default: Phase column off until explicitly enabled
-        self.action_toggle_phase_column.setChecked(False)
         self.action_toggle_phase_column.toggled.connect(
             self._on_toggle_phase_column
         )
+        self.action_toggle_phase_column.setChecked(show_phase)
 
         self.action_toggle_import_rows = QtWidgets.QAction(
             "Hide &Import-time Calls", self
         )
         self.action_toggle_import_rows.setCheckable(True)
-        self.action_toggle_import_rows.setChecked(False)
         self.action_toggle_import_rows.toggled.connect(
             self._on_toggle_import_rows
         )
+        self.action_toggle_import_rows.setChecked(hide_imports)
+
+        # Apply initial visibility / filtering directly so we do not rely on
+        # signals firing (setChecked(False) on a default-false action does not
+        # emit toggled).
+        if hasattr(self.viewer, "set_caller_column_visible"):
+            self.viewer.set_caller_column_visible(show_caller)
+        if hasattr(self.viewer, "set_phase_column_visible"):
+            self.viewer.set_phase_column_visible(show_phase)
+        if hasattr(self.viewer, "set_import_rows_hidden"):
+            self.viewer.set_import_rows_hidden(hide_imports)
 
         # LLM settings dialog
         self.action_llm_settings = QtWidgets.QAction("LLM &Summary Settings...", self)
@@ -119,24 +135,46 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_toggle_caller_column(self, checked: bool):
         """
-        Toggle visibility of the Caller column in the left-hand trace tree.
+        Toggle visibility of the Caller column in the left-hand trace tree
+        and persist the setting in app_config.json.
         """
         if hasattr(self.viewer, "set_caller_column_visible"):
             self.viewer.set_caller_column_visible(checked)
+        # Persist to config (inside ui section)
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        ui_state = dict(cfg.get("ui") or {})
+        ui_state["show_caller_column"] = bool(checked)
+        cfg["ui"] = ui_state
+        save_llm_config(cfg)
+        self.viewer._llm_config = cfg
 
     def _on_toggle_phase_column(self, checked: bool):
         """
-        Toggle visibility of the Phase column ("Import" vs "Runtime") in the left-hand trace tree.
+        Toggle visibility of the Phase column ("Import" vs "Runtime") in the left-hand trace tree
+        and persist the setting in app_config.json.
         """
         if hasattr(self.viewer, "set_phase_column_visible"):
             self.viewer.set_phase_column_visible(checked)
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        ui_state = dict(cfg.get("ui") or {})
+        ui_state["show_phase_column"] = bool(checked)
+        cfg["ui"] = ui_state
+        save_llm_config(cfg)
+        self.viewer._llm_config = cfg
 
     def _on_toggle_import_rows(self, checked: bool):
         """
-        Hide or show import-time calls in the execution tree.
+        Hide or show import-time calls in the execution tree
+        and persist the setting in app_config.json.
         """
         if hasattr(self.viewer, "set_import_rows_hidden"):
             self.viewer.set_import_rows_hidden(checked)
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        ui_state = dict(cfg.get("ui") or {})
+        ui_state["hide_import_rows"] = bool(checked)
+        cfg["ui"] = ui_state
+        save_llm_config(cfg)
+        self.viewer._llm_config = cfg
 
     def _on_toggle_llm_verbose_logging(self, checked: bool):
         """
@@ -169,16 +207,13 @@ class MainWindow(QtWidgets.QMainWindow):
         model_combo = QtWidgets.QComboBox(dlg)
         model_combo.setEditable(True)
 
-        # Load the list of known models from the shared app config, falling
-        # back to the DEFAULT_CONFIG models if none are stored yet.
+        # Load the list of known models from the shared app config.
+        # The single source of truth for this list is app_config.json["models"].
         cfg_models = []
         try:
             cfg_models = list((cfg.get("models") or []))  # type: ignore[assignment]
         except Exception:
             cfg_models = []
-
-        if not cfg_models:
-            cfg_models = list(DEFAULT_CONFIG.get("models", []))
 
         for m in cfg_models:
             model_combo.addItem(str(m))
@@ -255,6 +290,14 @@ class MainWindow(QtWidgets.QMainWindow):
         prompt_combo.addItem("Custom")
         custom_index = prompt_combo.count() - 1
 
+        # Default template used when the user selects "Custom"
+        default_custom_template = (
+            "Function source or trace context:\n"
+            "```python\n"
+            "{code}\n"
+            "```"
+        )
+
         prompt_edit = QtWidgets.QPlainTextEdit(dlg)
         current_prompt = getattr(self.viewer, "_llm_prompt_template", None)
         if not current_prompt and current_preset_id and current_preset_id in presets:
@@ -280,7 +323,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 tmpl = cfg.get("template", "")
                 if tmpl:
                     prompt_edit.setPlainText(tmpl)
-            # If "Custom" is selected, leave the text as-is.
+            else:
+                # "Custom" selected: start from a minimal template that includes
+                # the required {code} placeholder block.
+                prompt_edit.setPlainText(default_custom_template)
 
         prompt_combo.currentIndexChanged.connect(_on_preset_changed)
 
