@@ -75,6 +75,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.action_toggle_import_rows.setChecked(hide_imports)
 
+        # Apply initial visibility / filtering directly so we do not rely on
+        # signals firing (setChecked(False) on a default-false action does not
+        # emit toggled).
+        if hasattr(self.viewer, "set_caller_column_visible"):
+            self.viewer.set_caller_column_visible(show_caller)
+        if hasattr(self.viewer, "set_phase_column_visible"):
+            self.viewer.set_phase_column_visible(show_phase)
+        if hasattr(self.viewer, "set_import_rows_hidden"):
+            self.viewer.set_import_rows_hidden(hide_imports)
+
         # LLM settings dialog
         self.action_llm_settings = QtWidgets.QAction("LLM &Summary Settings...", self)
         self.action_llm_settings.triggered.connect(self._on_llm_settings)
