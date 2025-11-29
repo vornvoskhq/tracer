@@ -52,7 +52,7 @@
   "ui": {
     "verbose_logging": false,
     "show_caller_column": true,
-    "show_phase_column": false,
+    "show_phase_column": true,
     "hide_import_rows": false,
     "left_splitter_sizes": [
       475,
