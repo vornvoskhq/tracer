@@ -169,16 +169,13 @@ class MainWindow(QtWidgets.QMainWindow):
         model_combo = QtWidgets.QComboBox(dlg)
         model_combo.setEditable(True)
 
-        # Load the list of known models from the shared app config, falling
-        # back to the DEFAULT_CONFIG models if none are stored yet.
+        # Load the list of known models from the shared app config.
+        # The single source of truth for this list is app_config.json["models"].
         cfg_models = []
         try:
             cfg_models = list((cfg.get("models") or []))  # type: ignore[assignment]
         except Exception:
             cfg_models = []
-
-        if not cfg_models:
-            cfg_models = list(DEFAULT_CONFIG.get("models", []))
 
         for m in cfg_models:
             model_combo.addItem(str(m))
