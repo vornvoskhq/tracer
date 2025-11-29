@@ -40,34 +40,39 @@ class MainWindow(QtWidgets.QMainWindow):
         self.action_quit.triggered.connect(self.close)
 
         # Config menu actions
+        # Load persisted config for initial toggle states, falling back to defaults.
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        show_caller = bool(cfg.get("show_caller_column", True))
+        show_phase = bool(cfg.get("show_phase_column", False))
+        hide_imports = bool(cfg.get("hide_import_rows", False))
+
         self.action_toggle_caller_column = QtWidgets.QAction(
             "Show &Caller Column", self
         )
         self.action_toggle_caller_column.setCheckable(True)
-        self.action_toggle_caller_column.setChecked(True)
-        # Toggle visibility of the Caller column in the trace viewer
+        # Connect before setting the checked state so the viewer updates immediately.
         self.action_toggle_caller_column.toggled.connect(
             self._on_toggle_caller_column
         )
+        self.action_toggle_caller_column.setChecked(show_caller)
 
         self.action_toggle_phase_column = QtWidgets.QAction(
             "Show &Phase Column", self
         )
         self.action_toggle_phase_column.setCheckable(True)
-        # Default: Phase column off until explicitly enabled
-        self.action_toggle_phase_column.setChecked(False)
         self.action_toggle_phase_column.toggled.connect(
             self._on_toggle_phase_column
         )
+        self.action_toggle_phase_column.setChecked(show_phase)
 
         self.action_toggle_import_rows = QtWidgets.QAction(
             "Hide &Import-time Calls", self
         )
         self.action_toggle_import_rows.setCheckable(True)
-        self.action_toggle_import_rows.setChecked(False)
         self.action_toggle_import_rows.toggled.connect(
             self._on_toggle_import_rows
         )
+        self.action_toggle_import_rows.setChecked(hide_imports)
 
         # LLM settings dialog
         self.action_llm_settings = QtWidgets.QAction("LLM &Summary Settings...", self)
@@ -119,24 +124,40 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_toggle_caller_column(self, checked: bool):
         """
-        Toggle visibility of the Caller column in the left-hand trace tree.
+        Toggle visibility of the Caller column in the left-hand trace tree
+        and persist the setting in app_config.json.
         """
         if hasattr(self.viewer, "set_caller_column_visible"):
             self.viewer.set_caller_column_visible(checked)
+        # Persist to config
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        cfg["show_caller_column"] = bool(checked)
+        save_llm_config(cfg)
+        self.viewer._llm_config = cfg
 
     def _on_toggle_phase_column(self, checked: bool):
         """
-        Toggle visibility of the Phase column ("Import" vs "Runtime") in the left-hand trace tree.
+        Toggle visibility of the Phase column ("Import" vs "Runtime") in the left-hand trace tree
+        and persist the setting in app_config.json.
         """
         if hasattr(self.viewer, "set_phase_column_visible"):
             self.viewer.set_phase_column_visible(checked)
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        cfg["show_phase_column"] = bool(checked)
+        save_llm_config(cfg)
+        self.viewer._llm_config = cfg
 
     def _on_toggle_import_rows(self, checked: bool):
         """
-        Hide or show import-time calls in the execution tree.
+        Hide or show import-time calls in the execution tree
+        and persist the setting in app_config.json.
         """
         if hasattr(self.viewer, "set_import_rows_hidden"):
             self.viewer.set_import_rows_hidden(checked)
+        cfg = getattr(self.viewer, "_llm_config", {}) or {}
+        cfg["hide_import_rows"] = bool(checked)
+        save_llm_config(cfg)
+        self.viewer._llm_config = cfg
 
     def _on_toggle_llm_verbose_logging(self, checked: bool):
         """

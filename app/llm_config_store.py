@@ -121,6 +121,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Whether to log full LLM context (including file contents) to the LLM log.
     # When False, entrypoint logs only include instructions + file list.
     "verbose_logging": False,
+    # Column / row visibility settings in the trace view. These are toggled via
+    # the Config menu and persisted at the top level next to verbose_logging.
+    "show_caller_column": True,
+    "show_phase_column": False,
+    "hide_import_rows": False,
     # Optional UI state; these keys may or may not be present in user configs.
     # They are included here only to document expected structure.
     "ui": {
@@ -171,6 +176,9 @@ def load_llm_config() -> Dict[str, Any]:
                     "presets",
                     "models",
                     "verbose_logging",
+                    "show_caller_column",
+                    "show_phase_column",
+                    "hide_import_rows",
                     "ui",
                 ):
                     if key in raw:
@@ -273,6 +281,19 @@ def save_llm_config(config: Dict[str, Any]) -> None:
     verbose_logging = config.get("verbose_logging")
     if isinstance(verbose_logging, bool):
         to_save["verbose_logging"] = verbose_logging
+
+    # Column / row visibility toggles
+    show_caller_column = config.get("show_caller_column")
+    if isinstance(show_caller_column, bool):
+        to_save["show_caller_column"] = show_caller_column
+
+    show_phase_column = config.get("show_phase_column")
+    if isinstance(show_phase_column, bool):
+        to_save["show_phase_column"] = show_phase_column
+
+    hide_import_rows = config.get("hide_import_rows")
+    if isinstance(hide_import_rows, bool):
+        to_save["hide_import_rows"] = hide_import_rows
 
     # UI state (splitter sizes, dialog sizes, etc.)
     ui_state = config.get("ui")
