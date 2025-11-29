@@ -154,10 +154,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Moonshot / Kimi
         "moonshotai/kimi-k2",
         "moonshotai/kimi-k2-thinking",
-        # Perplexity Sonar family (chat / reasoning-focused)
-        "perplexity/sonar-small-online",
-        "perplexity/sonar-medium-online",
-        "perplexity/sonar-large-online",
+        # Perplexity Sonar (aggregated route)
+        "perplexity/sonar",
     ],
     # Whether to log full LLM context (including file contents) to the LLM log.
     # When False, entrypoint logs only include instructions + file list.
