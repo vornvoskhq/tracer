@@ -255,6 +255,14 @@ class MainWindow(QtWidgets.QMainWindow):
         prompt_combo.addItem("Custom")
         custom_index = prompt_combo.count() - 1
 
+        # Default template used when the user selects "Custom"
+        default_custom_template = (
+            "Function source or trace context:\n"
+            "```python\n"
+            "{code}\n"
+            "```"
+        )
+
         prompt_edit = QtWidgets.QPlainTextEdit(dlg)
         current_prompt = getattr(self.viewer, "_llm_prompt_template", None)
         if not current_prompt and current_preset_id and current_preset_id in presets:
@@ -280,7 +288,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 tmpl = cfg.get("template", "")
                 if tmpl:
                     prompt_edit.setPlainText(tmpl)
-            # If "Custom" is selected, leave the text as-is.
+            else:
+                # "Custom" selected: start from a minimal template that includes
+                # the required {code} placeholder block.
+                prompt_edit.setPlainText(default_custom_template)
 
         prompt_combo.currentIndexChanged.connect(_on_preset_changed)
 

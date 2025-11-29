@@ -227,14 +227,13 @@ def load_llm_config() -> Dict[str, Any]:
     # Normalize templates so that any stored newline escape sequences become
     # real newlines for easier editing in the LLM config dialog.
     #
-    # This covers:
-    #   - "\n" and "\r\n" style escapes that may appear when prompts are stored
-    #     with escaped newlines
-    #   - Double-escaped "\\n" sequences from older defaults
+    # This is conservative on purpose:
+    #   - It preserves real newlines already present in strings.
+    #   - It only converts explicit "\n" and "\r\n" escape sequences.
     def _normalize_template(t: str) -> str:
-        # First collapse Windows-style escapes to "\n"
+        # Collapse Windows-style escape sequences to "\n"
         t = t.replace("\\r\\n", "\\n")
-        # Then turn any remaining "\n" escape sequences into real newlines
+        # Turn explicit "\n" escapes into real newlines
         t = t.replace("\\n", "\n")
         return t
 
