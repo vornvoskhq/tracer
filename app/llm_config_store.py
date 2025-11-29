@@ -114,10 +114,40 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_tokens": 512,
     "default_prompt_preset": "concise-tech",
     "presets": DEFAULT_PRESETS,
-    # List of LLM model IDs is stored solely in app_config.json under the
-    # "models" key. We keep this empty in DEFAULT_CONFIG so that there is a
-    # single source of truth for the model list on disk.
-    "models": [],
+    # Default list of LLM model IDs. This is only used to seed app_config.json
+    # on first run; after that, app_config.json["models"] is the single source
+    # of truth for the model list.
+    "models": [
+        # OpenAI
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        # General auto-routing
+        "openrouter/auto",
+        # Mistral
+        "mistralai/mistral-small",
+        "mistralai/mistral-nemo",
+        # Anthropic
+        "anthropic/claude-3.5-haiku",
+        "anthropic/claude-3-haiku-20240307",
+        # Google Gemini
+        "google/gemini-1.5-flash",
+        # Meta Llama 3.1
+        "meta-llama/llama-3.1-8b-instruct",
+        "meta-llama/llama-3.1-70b-instruct",
+        # Cohere
+        "cohere/command-r-plus",
+        # Qwen (Alibaba)
+        "qwen/qwen-2.5-7b-instruct",
+        "qwen/qwen-plus",
+        # DeepSeek
+        "deepseek/deepseek-chat",
+        "deepseek/deepseek-r1",
+        # Moonshot / Kimi
+        "moonshotai/kimi-k2",
+        "moonshotai/kimi-k2-thinking",
+        # Perplexity Sonar (aggregated route)
+        "perplexity/sonar",
+    ],
     # Whether to log full LLM context (including file contents) to the LLM log.
     # When False, entrypoint logs only include instructions + file list.
     "verbose_logging": False,
