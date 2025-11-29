@@ -236,22 +236,7 @@ def load_llm_config() -> Dict[str, Any]:
         t = t.replace("\\r\\n", "\\n")
         # Then turn any remaining "\n" escape sequences into real newlines
         t = t.replace("\\n", "\n")
-        return tormalize templates so that any \"\\n\" or \"\\r\\n\" escape sequences become
-    # real newlines for easier editing in the LLM config dialog.
-    #
-    # This covers:
-    #   - \"\\\\n\" and \"\\\\r\\\\n\" strings that may appear when prompts are stored
-    #     with escaped newlines
-    #   - Double-escaped \"\\\\\\\\n\" sequences from older defaults
-    def _normalize_template(t: str) -> str:
-        # First collapse Windows-style escapes to \"\\n\"
-        t = t.replace(\"\\\\r\\\\n\", \"\\\\n\")
-        # Then turn any remaining \"\\\\n\" into a real newline
-        t = t.replace(\"\\\\n\", \"\\n\")
-        return tormalize templates so that any \"\\n\" sequences become real newlines for
-    # easier editing in the LLM config dialog.
-    def _normalize_template(t: str) -> str:
-        return t.replace("\\\\n", "\n")
+        return t
 
     # Start with defaults
     for pid, pconf in DEFAULT_PRESETS.items():
