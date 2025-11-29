@@ -67,22 +67,51 @@ DEFAULT_PRESETS: Dict[str, Dict[str, str]] = {
             "```"
         ),
     },
+    "refactor-ai-mess": {
+        "label": "Refactor AI-generated / overcomplex code",
+        "template": (
+            "You are an expert Python engineer specializing in refactoring code produced by autonomous AI agents. "
+            "You will be given one function or a small execution slice that is likely to be:\n"
+            "- Disorganized\n"
+            "- Redundant or overly defensive\n"
+            "- Over-abstracted or needlessly generic\n"
+            "- Hard to modify safely\n\n"
+            "Your job:\n"
+            "1) Diagnose problems:\n"
+            "- Identify redundant branches, dead code, and obvious over-engineering\n"
+            "- Call out unnecessary abstractions, indirection layers, or configuration flags\n"
+            "- Highlight any unclear naming, mixed responsibilities, or hidden side effects\n\n"
+            "2) Propose a refactor plan:\n"
+            "- Explain how you would simplify the structure while preserving behavior\n"
+            "- Suggest clearer boundaries and responsibilities for functions/classes\n"
+            "- Point out opportunities to delete code instead of just reorganizing it\n\n"
+            "3) Provide concrete rewrite guidance:\n"
+            "- Give a concise, step-by-step checklist to get from the current version to a cleaner one\n"
+            "- Include any invariants or tests that should be in place before refactoring\n\n"
+            "Be opinionated but practical: prefer small, safe simplifications over big rewrites unless the code is "
+            "truly unmanageable.\n\n"
+            "Function source or trace context:\n"
+            "```python\n"
+            "{code}\n"
+            "```"
+        ),
+    },
     "entrypoints": {
         "label": "Suggest entry points",
         "template": (
             "You are helping a developer understand a new, black-box Python codebase. "
-            "You will be given snippets from many .py files in this project.\\n\\n"
-            "Your tasks:\\n"
-            "- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\n"
+            "You will be given snippets from many .py files in this project.\\\\n\\\\n"
+            "Your tasks:\\\\n"
+            "- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\\\n"
             "- For each candidate entrypoint, briefly explain why it is likely an entrypoint "
             "(e.g., has an if __name__ == '__main__' block, defines a main() that parses CLI args, "
-            "or is clearly the starting script).\\n"
+            "or is clearly the starting script).\\\\n"
             "- If there appears to be a thin wrapper script that quickly hands off control to a deeper module "
-            "or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\n"
-            "- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\n\\n"
-            "Project file snippets:\\n"
-            "```text\\n"
-            "{code}\\n"
+            "or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\\\n"
+            "- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\\\n\\\\n"
+            "Project file snippets:\\\\n"
+            "```text\\\\n"
+            "{code}\\\\n"
             "```"
         ),
     },
@@ -125,6 +154,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Moonshot / Kimi
         "moonshotai/kimi-k2",
         "moonshotai/kimi-k2-thinking",
+        # Perplexity Sonar family (chat / reasoning-focused)
+        "perplexity/sonar-small-online",
+        "perplexity/sonar-medium-online",
+        "perplexity/sonar-large-online",
     ],
     # Whether to log full LLM context (including file contents) to the LLM log.
     # When False, entrypoint logs only include instructions + file list.
