@@ -1,0 +1,78 @@
+{
+  "default_prompt_preset": "bugs-edges",
+  "max_tokens": 512,
+  "model": "openai/gpt-4o-mini",
+  "models": [
+    "openai/gpt-4o-mini",
+    "openai/gpt-4o",
+    "openrouter/auto",
+    "mistralai/mistral-small",
+    "mistralai/mistral-nemo",
+    "anthropic/claude-3.5-haiku",
+    "anthropic/claude-3-haiku-20240307",
+    "google/gemini-1.5-flash",
+    "meta-llama/llama-3.1-8b-instruct",
+    "meta-llama/llama-3.1-70b-instruct",
+    "cohere/command-r-plus",
+    "qwen/qwen-2.5-7b-instruct",
+    "qwen/qwen-plus",
+    "deepseek/deepseek-chat",
+    "deepseek/deepseek-r1",
+    "moonshotai/kimi-k2",
+    "moonshotai/kimi-k2-thinking",
+    "perplexity/sonar"
+  ],
+  "presets": {
+    "behavior-io": {
+      "label": "Behavior + inputs/outputs only",
+      "template": "Summarize the behavior of the following function or execution path, focusing strictly on:\n- Inputs (parameters and important global state)\n- Outputs (return values and changes to state)\n- Invariants the function relies on\n\nAvoid restating the code line-by-line.\n\nFunction source or trace context:\n```python\n{code}\n```"
+    },
+    "bugs-edges": {
+      "label": "Potential bugs / edge cases",
+      "template": "Review the following function or execution path for potential bugs and edge cases. Provide a short explanation that covers:\\n- Any obvious or likely bugs\\n- Edge cases that might fail (e.g., empty inputs, None, large values)\\n- Error handling or lack thereof\\n- Suggestions for tests that should be added\\n\\nFunction source or trace context:\\n```python\\n{code}\\n```"
+    },
+    "concise-tech": {
+      "label": "Concise technical summary",
+      "template": "You are an expert Python engineer. Summarize the purpose and behavior of the following function in concise, technical prose. Focus on:\n- Overall purpose\n- Key inputs and outputs\n- Important side effects (I/O, network, database, etc.)\n- Non-obvious edge cases or constraints\n\nFunction source or trace context:\n```python\n{code}\n```"
+    },
+    "entrypoints": {
+      "label": "Suggest entry points",
+      "template": "You are helping a developer understand a new, black-box Python codebase. You will be given snippets from many .py files in this project.\\n\\nYour tasks:\\n- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\n- For each candidate entrypoint, briefly explain why it is likely an entrypoint (e.g., has an if __name__ == '__main__' block, defines a main() that parses CLI args, or is clearly the starting script).\\n- If there appears to be a thin wrapper script that quickly hands off control to a deeper module or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\n- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\n\\nProject file snippets:\\n```text\\n{code}\\n```"
+    },
+    "onboarding": {
+      "label": "High-level explanation (onboarding)",
+      "template": "You are helping onboard a new engineer to this codebase. Explain what the following function or execution path does in clear, approachable language. Focus on:\n- What problem it solves in the overall system\n- How it fits into the execution flow\n- Any assumptions or preconditions\n- Gotchas or areas where changes are risky\n\nFunction source or trace context:\n```python\n{code}\n```"
+    },
+    "refactor-ai-mess": {
+      "label": "Refactor AI-generated / overcomplex code",
+      "template": "You are an expert Python engineer. Review the following function or execution slice, which was likely generated or heavily edited by AI. Provide a concise analysis that covers:\n- Where the structure is overcomplicated, redundant, or over-abstracted\n- Any dead code, unused branches, or unnecessary configuration flags\n- Any use of synthetic or fallback data paths that should be removed or made explicit (for technical analysis software, there must be no hidden fake data).\n\nThen propose a refactor plan:\n- How to simplify while preserving behavior and data integrity\n- Which pieces can safely be deleted vs. just reorganized\n- A short checklist of steps to get from the current version to a cleaner one\n\nFunction source or trace context:\n```python\n{code}\n```"
+    }
+  },
+  "temperature": 0.1,
+  "ui": {
+    "left_splitter_sizes": [
+      475,
+      470
+    ],
+    "left_tree_column_widths": [
+      26,
+      25,
+      20,
+      53,
+      59,
+      189,
+      128,
+      127,
+      183
+    ],
+    "llm_dialog_size": [
+      730,
+      486
+    ],
+    "main_splitter_sizes": [
+      692,
+      1194
+    ]
+  },
+  "verbose_logging": false
+}
