@@ -114,40 +114,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_tokens": 512,
     "default_prompt_preset": "concise-tech",
     "presets": DEFAULT_PRESETS,
-    # Default list of LLM model IDs. This is only used to seed app_config.json
-    # on first run; after that, app_config.json["models"] is the single source
-    # of truth for the model list.
-    "models": [
-        # OpenAI
-        "openai/gpt-4o-mini",
-        "openai/gpt-4o",
-        # General auto-routing
-        "openrouter/auto",
-        # Mistral
-        "mistralai/mistral-small",
-        "mistralai/mistral-nemo",
-        # Anthropic
-        "anthropic/claude-3.5-haiku",
-        "anthropic/claude-3-haiku-20240307",
-        # Google Gemini
-        "google/gemini-1.5-flash",
-        # Meta Llama 3.1
-        "meta-llama/llama-3.1-8b-instruct",
-        "meta-llama/llama-3.1-70b-instruct",
-        # Cohere
-        "cohere/command-r-plus",
-        # Qwen (Alibaba)
-        "qwen/qwen-2.5-7b-instruct",
-        "qwen/qwen-plus",
-        # DeepSeek
-        "deepseek/deepseek-chat",
-        "deepseek/deepseek-r1",
-        # Moonshot / Kimi
-        "moonshotai/kimi-k2",
-        "moonshotai/kimi-k2-thinking",
-        # Perplexity Sonar (aggregated route)
-        "perplexity/sonar",
-    ],
+    # The list of LLM model IDs is user-configurable and stored only in
+    # app_config.json["models"]. We keep this empty here so there is a single
+    # source of truth on disk.
+    "models": [],
     # Whether to log full LLM context (including file contents) to the LLM log.
     # When False, entrypoint logs only include instructions + file list.
     "verbose_logging": False,
@@ -243,15 +213,6 @@ def load_llm_config() -> Dict[str, Any]:
             merged_presets[pid] = {"label": label, "template": template}
 
     config["presets"] = merged_presets
-
-    # Ensure we always have a non-empty model list in memory. If the loaded
-    # app_config.json did not define "models" (or defined an empty list), seed
-    # it from DEFAULT_CONFIG once. This value will be written back to
-    # app_config.json on the next save, and from then on the file is the
-    # single source of truth for the model list.
-    models = config.get("models")
-    if not isinstance(models, list) or not models:
-        config["models"] = list(DEFAULT_CONFIG.get("models", []))
 
     # Ensure default_prompt_preset is valid
     default_preset = config.get("default_prompt_preset")
