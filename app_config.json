@@ -1,26 +1,105 @@
 {
   "default_prompt_preset": "bugs-edges",
   "max_tokens": 512,
-  "model": "openai/gpt-4o-mini",
+  "model": "perplexity/sonar",
+  "model_prices": {
+    "anthropic/claude-3-haiku-20240307": {
+      "input": 0.25,
+      "output": 1.25
+    },
+    "anthropic/claude-3.5-haiku": {
+      "input": 1.0,
+      "output": 5.0
+    },
+    "cohere/command-r-plus": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "deepseek/deepseek-chat": {
+      "input": 0.14,
+      "output": 0.28
+    },
+    "deepseek/deepseek-r1": {
+      "input": 0.55,
+      "output": 1.1
+    },
+    "google/gemini-1.5-flash": {
+      "input": 0.35,
+      "output": 1.05
+    },
+    "meta-llama/llama-3.1-70b-instruct": {
+      "input": 3.5,
+      "output": 5.0
+    },
+    "meta-llama/llama-3.1-8b-instruct": {
+      "input": 0.3,
+      "output": 0.6
+    },
+    "mistralai/mistral-nemo": {
+      "input": 0.2,
+      "output": 0.6
+    },
+    "mistralai/mistral-small": {
+      "input": 0.25,
+      "output": 0.25
+    },
+    "moonshotai/kimi-k2": {
+      "input": 1.5,
+      "output": 3.0
+    },
+    "moonshotai/kimi-k2-thinking": {
+      "input": 2.0,
+      "output": 4.0
+    },
+    "openai/gpt-4o": {
+      "input": 5.0,
+      "output": 15.0
+    },
+    "openai/gpt-4o-mini": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "openrouter/auto": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "perplexity/sonar": {
+      "input": 1.0,
+      "output": 2.0
+    },
+    "perplexity/sonar-reasoning": {
+      "input": 2.0,
+      "output": 4.0
+    },
+    "qwen/qwen-2.5-7b-instruct": {
+      "input": 0.2,
+      "output": 0.4
+    },
+    "qwen/qwen-plus": {
+      "input": 0.8,
+      "output": 2.4
+    }
+  },
   "models": [
-    "openai/gpt-4o-mini",
-    "openai/gpt-4o",
-    "openrouter/auto",
-    "mistralai/mistral-small",
-    "mistralai/mistral-nemo",
-    "anthropic/claude-3.5-haiku",
     "anthropic/claude-3-haiku-20240307",
-    "google/gemini-1.5-flash",
-    "meta-llama/llama-3.1-8b-instruct",
-    "meta-llama/llama-3.1-70b-instruct",
+    "anthropic/claude-3.5-haiku",
     "cohere/command-r-plus",
-    "qwen/qwen-2.5-7b-instruct",
-    "qwen/qwen-plus",
     "deepseek/deepseek-chat",
     "deepseek/deepseek-r1",
+    "google/gemini-1.5-flash",
+    "meta-llama/llama-3.1-70b-instruct",
+    "meta-llama/llama-3.1-8b-instruct",
+    "mistralai/mistral-nemo",
+    "mistralai/mistral-small",
     "moonshotai/kimi-k2",
     "moonshotai/kimi-k2-thinking",
-    "perplexity/sonar"
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openrouter/auto",
+    "perplexity/sonar",
+    "perplexity/sonar-reasoning",
+    "qwen/qwen-2.5-7b-instruct",
+    "qwen/qwen-plus"
   ],
   "presets": {
     "behavior-io": {
@@ -29,7 +108,7 @@
     },
     "bugs-edges": {
       "label": "Potential bugs / edge cases",
-      "template": "Review the following function or execution path for potential bugs and edge cases. Provide a short explanation that covers:\\n- Any obvious or likely bugs\\n- Edge cases that might fail (e.g., empty inputs, None, large values)\\n- Error handling or lack thereof\\n- Suggestions for tests that should be added\\n\\nFunction source or trace context:\\n```python\\n{code}\\n```"
+      "template": "This code runs a pipeline of several functions: decorrelate, limiter etc. Can you locate where these functions are executed, i want to be able to re-order the functions as needed\n\n\nFunction source or trace context:\n```python\n{code}\n```"
     },
     "concise-tech": {
       "label": "Concise technical summary",
@@ -37,7 +116,7 @@
     },
     "entrypoints": {
       "label": "Suggest entry points",
-      "template": "You are helping a developer understand a new, black-box Python codebase. You will be given snippets from many .py files in this project.\\n\\nYour tasks:\\n- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\\n- For each candidate entrypoint, briefly explain why it is likely an entrypoint (e.g., has an if __name__ == '__main__' block, defines a main() that parses CLI args, or is clearly the starting script).\\n- If there appears to be a thin wrapper script that quickly hands off control to a deeper module or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\\n- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\\n\\nProject file snippets:\\n```text\\n{code}\\n```"
+      "template": "You are helping a developer understand a new, black-box Python codebase. You will be given snippets from many .py files in this project.\n\nYour tasks:\n- Identify which file(s) are most likely to act as entrypoints (top-level scripts or main modules).\n- For each candidate entrypoint, briefly explain why it is likely an entrypoint (e.g., has an if __name__ == '__main__' block, defines a main() that parses CLI args, or is clearly the starting script).\n- If there appears to be a thin wrapper script that quickly hands off control to a deeper module or framework, explain that layering and suggest which deeper file is the 'real' place to start reading.\n- Provide a short recommendation section: 'If you want to understand this application, start by reading: ...'.\n\nProject file snippets:\n```text\n{code}\n```"
     },
     "onboarding": {
       "label": "High-level explanation (onboarding)",
@@ -50,33 +129,32 @@
   },
   "temperature": 0.1,
   "ui": {
-    "verbose_logging": false,
-    "show_caller_column": true,
-    "show_phase_column": true,
     "hide_import_rows": false,
     "left_splitter_sizes": [
-      475,
-      470
+      422,
+      523
     ],
     "left_tree_column_widths": [
       26,
-      25,
+      43,
       20,
-      53,
-      59,
-      189,
-      128,
-      127,
+      51,
+      70,
+      191,
+      174,
+      159,
       183
     ],
     "llm_dialog_size": [
-      730,
-      486
+      468,
+      318
     ],
     "main_splitter_sizes": [
-      692,
-      1194
-    ]
-  },
-  "verbose_logging": false
+      842,
+      1044
+    ],
+    "show_caller_column": true,
+    "show_phase_column": true,
+    "verbose_logging": false
+  }
 }

@@ -9,32 +9,12 @@ from typing import Any, Dict, Optional
 import aiohttp
 
 
-# Default model used when nothing is configured via environment or settings.
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+# Default model is configured via app_config.json["model"]; we do not hardcode it here.
 
 
-# Very rough price table (USD per 1M tokens) for a few common models.
-# This is only used for CLI-side cost estimation and is not guaranteed to be
-# accurate for your specific OpenRouter account or pricing tier.
-PRICE_TABLE_USD_PER_1M: Dict[str, Dict[str, float]] = {
-    "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "openai/gpt-4o": {"input": 5.00, "output": 15.00},
-    # Add more entries here if you regularly use other models and know their pricing.
-}
-
-
-DEFAULT_PROMPT_TEMPLATE = (
-    "You are an expert Python engineer. Summarize the purpose and behavior "
-    "of the following function in concise, technical prose. Focus on:\n"
-    "- Overall purpose\n"
-    "- Key inputs and outputs\n"
-    "- Important side effects (I/O, network, database, etc.)\n"
-    "- Non-obvious edge cases or constraints\n\n"
-    "Function source or trace context:\n"
-    "```python\n"
-    "{code}\n"
-    "```"
-)
+# Price information (USD per 1M tokens) is now loaded from app_config.json["model_prices"]
+# and passed in via the TraceViewerWidget. We do not hardcode a global table here; if
+# no prices are provided, cost estimation simply falls back to `NA` in logs.
 
 
 def _load_api_key_from_env_file() -> str:
@@ -310,17 +290,31 @@ class OpenRouterClient:
 
     def __init__(
         self,
-        model: Optional[str] = None,
-        prompt_template: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: float = 0.1,
+        model: str,
+        prompt_template: Optional[str],
+        max_tokens: Optional[int],
+        temperature: float,
+        price_table: Optional[Dict[str, Dict[str, float]]] = None,
     ):
-        env_model = os.getenv("OPENROUTER_MODEL", "").strip()
-        self.model = model or env_model or DEFAULT_MODEL
-
-        self.prompt_template = prompt_template or DEFAULT_PROMPT_TEMPLATE
+        # Model and prompt template are now expected to be fully configured by
+        # the caller (via app_config.json). If no prompt template is provided,
+        # we treat this as a hard configuration error rather than falling back
+        # to an implicit default.
+        if not prompt_template or not isinstance(prompt_template, str):
+            raise ValueError(
+                "OpenRouterClient requires a non-empty prompt_template. "
+                "Ensure app_config.json['presets'][default_prompt_preset]['template'] is set."
+            )
+        self.model = model
+        self.prompt_template = prompt_template
         self.max_tokens = max_tokens
         self.temperature = float(temperature)
+
+        # Per-model pricing (USD per 1M tokens) used only for cost estimation.
+        # If not provided explicitly, leave empty and skip cost estimation.
+        self.price_table: Dict[str, Dict[str, float]] = (
+            dict(price_table) if isinstance(price_table, dict) else {}
+        )
 
         self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not self.api_key:
@@ -398,10 +392,10 @@ class OpenRouterClient:
             in_tokens = int(usage.get("prompt_tokens", 0) or 0)
             out_tokens = int(usage.get("completion_tokens", 0) or 0)
 
-            price_info = PRICE_TABLE_USD_PER_1M.get(self.model)
+            price_info = self.price_table.get(self.model)
             if price_info:
-                in_cost = (in_tokens / 1_000_000.0) * price_info["input"]
-                out_cost = (out_tokens / 1_000_000.0) * price_info["output"]
+                in_cost = (in_tokens / 1_000_000.0) * float(price_info.get("input", 0.0))
+                out_cost = (out_tokens / 1_000_000.0) * float(price_info.get("output", 0.0))
                 total_cost = in_cost + out_cost
                 estimated_cost: Optional[float] = total_cost
             else:

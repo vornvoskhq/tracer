@@ -1,8 +1,16 @@
 #!/bin/bash
-# activate venv and run tracer_app
-source /home/vorn/mithra/tracer/.venv/bin/activate
+# Resolve the actual path of this script, following symlinks
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
 
-# Pass the current working directory as the initial codebase folder so that
-# invoking the global "trcr" symlink from any directory causes that directory
-# to be opened in the UI as the codebase.
-python /home/vorn/mithra/tracer/tracer_app.py "$(pwd)" "$@"
+# Prefer a .venv inside the script directory; fall back to current Python if missing
+if [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
+    source "$SCRIPT_DIR/.venv/bin/activate"
+fi
+
+python "$SCRIPT_DIR/tracer_app.py" "$(pwd)" "$@"

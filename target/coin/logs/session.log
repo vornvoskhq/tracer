@@ -1,0 +1,12 @@
+2025-11-30T21:41:09.283169 | z-ai/glm-4.5-air | total=263 prompt=74 completion=189
+2025-11-30T21:47:33.414877 | z-ai/glm-4.5-air | total=242 prompt=74 completion=168
+2025-11-30T21:47:43.691637 | z-ai/glm-4.5-air | total=232 prompt=67 completion=165
+2025-12-02T17:22:07.255131 | z-ai/glm-4.5-air | total=390 prompt=70 completion=320
+2025-12-02T17:22:52.766566 | z-ai/glm-4.5-air | total=83 prompt=80 completion=3
+2025-12-02T17:27:18.345816 | z-ai/glm-4.5-air | total=373 prompt=74 completion=299
+2025-12-02T17:53:13.232928 | qwen-3-32b | total=397 prompt=77 completion=320
+2025-12-02T17:56:41.412447 | qwen-3-32b | total=394 prompt=26 completion=368
+2025-12-02T17:58:03.416988 | qwen-3-32b | total=429 prompt=32 completion=397
+2025-12-02T18:04:41.243289 | qwen-3-32b | total=370 prompt=26 completion=344
+2025-12-02T18:31:46.207903 | qwen-3-32b | total=316 prompt=26 completion=290
+2025-12-02T18:32:01.056265 | qwen-3-32b | total=225 prompt=23 completion=202

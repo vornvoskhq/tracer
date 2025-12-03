@@ -101,15 +101,38 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._function_calls: List[FunctionCallView] = []
         self._file_accesses: List[FileAccessView] = []
 
-        # LLM client and configuration
-        self._llm_client = OpenRouterClient()
-        self._llm_model_override: Optional[str] = None
-        self._llm_max_tokens: Optional[int] = None
-        self._llm_temperature: float = 0.1
-        self._llm_prompt_template: Optional[str] = None
-
-        # LLM + app configuration (loaded from app_config.json when available)
+        # LLM + app configuration (loaded from app_config.json; required)
         self._llm_config: Dict[str, Any] = load_llm_config()
+
+        # LLM client and configuration
+        price_table = self._llm_config.get("model_prices") or {}
+        config_model = str(self._llm_config.get("model") or "").strip()
+        if not config_model:
+            raise RuntimeError("LLM model must be specified in app_config.json['model']")
+
+        # Determine initial prompt template from the default preset, if any.
+        presets = self._llm_config.get("presets") or {}
+        default_preset_id = self._llm_config.get("default_prompt_preset")
+        initial_template: Optional[str] = None
+        if default_preset_id and default_preset_id in presets:
+            initial_template = presets[default_preset_id].get("template")
+
+        temperature = float(self._llm_config.get("temperature", 0.10))
+        max_tokens = self._llm_config.get("max_tokens")
+        if not isinstance(max_tokens, int):
+            max_tokens = None
+
+        self._llm_client = OpenRouterClient(
+            model=config_model,
+            prompt_template=initial_template,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            price_table=price_table,
+        )
+        self._llm_model_override: Optional[str] = config_model
+        self._llm_max_tokens: Optional[int] = max_tokens
+        self._llm_temperature: float = temperature
+        self._llm_prompt_template: Optional[str] = initial_template
         self._llm_presets: Dict[str, Dict[str, str]] = self._llm_config.get("presets", {}) or {}
 
         default_preset_id = self._llm_config.get("default_prompt_preset")
