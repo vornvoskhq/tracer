@@ -1,0 +1,84 @@
+# Reporter Configuration
+llm:
+  default_model: "glm-4.5-air"  # Key from available_models
+  default_system_prompt: "default_analysis.txt"
+  temperature: 0.3
+  max_tokens: 2000
+  
+  # Role-based model assignments
+  roles:
+    summarizer: "glm-4.5-air"
+    analysis: "gpt-4o-mini"
+    research: "claude-haiku"
+  
+  # Available models with short names and pricing
+  available_models:
+    "glm-4.5-air":
+      full_name: "z-ai/glm-4.5-air"
+      display_name: "GLM 4.5 Air"
+      input_cost: 0.10    # USD per 1M tokens
+      output_cost: 0.40
+      recommended: true
+    "claude-sonnet":
+      full_name: "anthropic/claude-3.5-sonnet"
+      display_name: "Claude 3.5 Sonnet"
+      input_cost: 3.0    # USD per 1M tokens
+      output_cost: 15.0
+      recommended: true
+    "claude-haiku":
+      full_name: "anthropic/claude-3.5-haiku" 
+      display_name: "Claude 3.5 Haiku (Fast)"
+      input_cost: 0.8
+      output_cost: 4.0
+      recommended: true
+    "gpt-4o":
+      full_name: "openai/gpt-4o"
+      display_name: "GPT-4o"
+      input_cost: 5.0
+      output_cost: 15.0
+      recommended: false
+    "gpt-4o-mini":
+      full_name: "openai/gpt-4o-mini"
+      display_name: "GPT-4o Mini"
+      input_cost: 0.15
+      output_cost: 0.6
+      recommended: true
+    "llama-70b":
+      full_name: "meta-llama/llama-3.1-70b-instruct"
+      display_name: "Llama 3.1 70B"
+      input_cost: 0.9
+      output_cost: 0.9
+      recommended: true
+
+# VGMini integration
+vgmini:
+  # Path to vgmini ranking output (relative to reporter directory)
+  ranking_output_path: "../vgmini/results"
+  # Default number of top stocks to analyze
+  default_top_n: 5
+
+# Output configuration  
+output:
+  reports_dir: "reports"
+  console_format: "compact"  # compact, detailed
+  console_theme: "dystopian"  # dystopian, normal
+  default_length: "concise"  # Key from length_templates
+  
+  # Length templates with instructions
+  length_templates:
+    "concise":
+      display_name: "Concise (Ultra-brief)"
+      max_chars: 500
+      instruction: "CRITICAL: Maximum 500 characters. Use bullet points and short phrases only. No elaboration."
+    "standard": 
+      display_name: "Standard (Moderate)"
+      max_chars: 1000
+      instruction: "Keep response under 1000 characters. Focus on key points only with brief explanations."
+    "detailed":
+      display_name: "Detailed (Comprehensive)" 
+      max_chars: null
+      instruction: "Provide comprehensive analysis with detailed explanations. No length restrictions."
+    "brutal":
+      display_name: "Brutal Facts Only"
+      max_chars: 400
+      instruction: "Maximum 400 characters. Clinical facts only. No speculation or optimism."

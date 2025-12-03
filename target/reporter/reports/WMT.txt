@@ -1,0 +1,35 @@
+Stock Analysis Report: WMT
+Generated: 2025-12-02 14:21:42
+Model: gpt-4o-mini (GPT-4o Mini (Cheap))
+Length: concise (Concise (Ultra-brief))
+
+============================================================
+
+**CORPORATE ENTITY PROFILE**
+- Sector/Industry: Retail
+- Primary Business Operations: Grocery and general merchandise
+- Market Capitalization Tier: Large cap
+
+**RANKING INTELLIGENCE**
+- Current Position: 10
+- Score Interpretation: 0.697 indicates moderate strength
+- Signal Strength Assessment: Buy signal present
+
+**SYSTEMIC RISK FACTORS**
+- Economic Collapse Exposure: High
+- Supply Chain Disruption Vulnerability: Moderate
+- Currency Debasement Risk: Significant
+- Social Unrest Impact Potential: Elevated
+
+**MARKET DECAY ANALYSIS**
+- Position Relative to Market Deterioration: Weak
+- Correlation with Institutional Manipulation: Possible
+- Liquidity Crisis Susceptibility: High
+
+**SURVIVAL PROBABILITY**
+- Short-term Viability: Uncertain (6-12 months)
+- Adaptation Potential: Limited
+- Resource Scarcity Resilience: Low
+
+============================================================
+End of Report
