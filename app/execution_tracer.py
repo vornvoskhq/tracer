@@ -87,6 +87,18 @@ def should_trace(filename, function_name):
     if not filename:
         return False
 
+    # Always trace the entrypoint script itself
+    try:
+        entry_abs = os.path.abspath("$ENTRY_POINT")
+    except Exception:
+        entry_abs = "$ENTRY_POINT"
+    if (
+        filename == entry_abs
+        or filename.endswith("/$ENTRY_POINT")
+        or filename.endswith("\\$ENTRY_POINT")
+    ):
+        return True
+
     # Must be a Python file
     if not filename.endswith(".py"):
         return False
