@@ -20,6 +20,7 @@ from typing import Dict, List, Set, Optional
 from collections import defaultdict, Counter
 from dataclasses import dataclass, asdict
 from string import Template
+from .entry_detector import detect_entry_from_command, detect_entry_from_conventions
 
 
 @dataclass
@@ -1043,8 +1044,11 @@ class MainExecutionTracer:
         if not self.target_dir.exists():
             raise FileNotFoundError(f"Codebase directory not found: {self.target_dir}")
         
-        # Detect entry point
-        self.entry_point = self.detect_entry_point()
+        # Detect entry point (may not exist for all projects)
+        try:
+            self.entry_point = self.detect_entry_point()
+        except FileNotFoundError:
+            self.entry_point = None
         
         # Detect virtual environment - START WITH THE VENV PYTHON!
         self.target_venv = self.target_dir / ".venv"
@@ -1071,34 +1075,13 @@ class MainExecutionTracer:
     
     def detect_entry_point(self) -> str:
         """
-        Auto-detect the main entry point for the codebase.
+        Auto-detect a conventional main entry point for the codebase.
+
+        This uses only conventional filenames and does not fall back to
+        heuristics like "largest Python file". It is primarily used for
+        informational purposes (e.g. --list-codebases).
         """
-        # Common entry point patterns
-        possible_entry_points = [
-            # Direct Python files
-            self.target_dir / f"{self.codebase_name}.py",
-            self.target_dir / "main.py",
-            self.target_dir / "app.py",
-            self.target_dir / "run.py",
-            self.target_dir / "__main__.py",
-            # Executable scripts
-            self.target_dir / f"{self.codebase_name}",
-            self.target_dir / "run",
-            self.target_dir / "start",
-        ]
-        
-        for entry_point in possible_entry_points:
-            if entry_point.exists():
-                return entry_point.name
-        
-        # If no obvious entry point, look for the largest .py file in root
-        py_files = list(self.target_dir.glob("*.py"))
-        if py_files:
-            largest_file = max(py_files, key=lambda f: f.stat().st_size)
-            print(f"⚠️  No obvious entry point found, using largest Python file: {largest_file.name}")
-            return largest_file.name
-        
-        raise FileNotFoundError(f"No entry point found for {self.codebase_name}")
+        return detect_entry_from_conventions(self.target_dir, self.codebase_name)
     
     def create_main_execution_tracer(self, command_args: List[str]) -> str:
         """
@@ -1514,28 +1497,40 @@ if __name__ == "__main__":
     
     def trace_command(self, command: str) -> ExecutionTrace:
         """
-        Trace command with proper main execution.
+        Trace a command by first determining a precise entry point.
 
-        If the command looks like a direct Python invocation
-        (e.g. "python reporter_cli.py" or "/venv/bin/python reporter_cli.py"),
-        we treat the script argument as the entry point and do NOT fall back
-        to the "largest Python file" heuristic.
+        The entry point is derived from the command itself (python script.py,
+        python -m package.module, ./script.py, or an executable wrapper inside
+        the target directory). If no clear entry point can be determined from
+        the command, this method raises an error instead of guessing.
         """
-        # Parse command into parts
-        cmd_parts = command.strip().split()
+        # Determine entry point and arguments from the command
+        entry_point, args_for_entry = detect_entry_from_command(
+            command, self.target_dir, self.codebase_name
+        )
+        if entry_point is None:
+            raise RuntimeError(
+                f"Could not determine a Python entry point from command: {command!r}. "
+                f"Please provide a command that directly runs the Python script "
+                f"(e.g. 'python main.py') or an executable Python script inside "
+                f"the target codebase."
+            )
 
-        # Start from the auto-detected entry point, but allow overrides
-        entry_point = self.entry_point
-
-        # Detect patterns like:
-        #   python reporter_cli.py ...
-        #   python3 reporter_cli.py ...
-        #   /path/to/python reporter_cli.py ...
-        # And also:
-        #   reporter_cli.py ...
-        if cmd_parts:
-            first = cmd_parts[0]
-            second = cmd_parts[1] if len(cmd_parts) > 1 else None
+        # Compact summary of what is being traced, to reduce console clutter.
+        print(
+            f"TRACE | cmd={command} | "
+            f"codebase={self.codebase_name} | "
+            f"entry={entry_point} | "
+            f"python={self.target_python}"
+        )
+        
+        # Create tracer script (using standalone template helper)
+        tracer_script = build_tracer_script(
+            str(self.target_dir),
+            self.codebase_name,
+            entry_point,
+            args_for_entry,
+        ) > 1 else None
 
             # Helper to check if a given token is a script living in target_dir
             def _script_in_target(token: str) -> Optional[str]:
