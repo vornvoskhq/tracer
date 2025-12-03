@@ -1514,28 +1514,74 @@ if __name__ == "__main__":
     
     def trace_command(self, command: str) -> ExecutionTrace:
         """
-        Trace VGMini command with proper main execution.
+        Trace command with proper main execution.
+
+        If the command looks like a direct Python invocation
+        (e.g. "python reporter_cli.py" or "/venv/bin/python reporter_cli.py"),
+        we treat the script argument as the entry point and do NOT fall back
+        to the "largest Python file" heuristic.
         """
+        # Parse command into parts
+        cmd_parts = command.strip().split()
+
+        # Start from the auto-detected entry point, but allow overrides
+        entry_point = self.entry_point
+
+        # Detect patterns like:
+        #   python reporter_cli.py ...
+        #   python3 reporter_cli.py ...
+        #   /path/to/python reporter_cli.py ...
+        # And also:
+        #   reporter_cli.py ...
+        if cmd_parts:
+            first = cmd_parts[0]
+            second = cmd_parts[1] if len(cmd_parts) > 1 else None
+
+            # Helper to check if a given token is a script living in target_dir
+            def _script_in_target(token: str) -> Optional[str]:
+                if not token:
+                    return None
+                # Strip any leading ./ or .\ patterns
+                normalized = token.lstrip("./")
+                script_path = self.target_dir / normalized
+                if script_path.exists() and script_path.is_file() and script_path.suffix == ".py":
+                    return script_path.name
+                return None
+
+            # Case 1: python X.py ...
+            is_python_like = (
+                "python" in os.path.basename(first)
+            )
+            if is_python_like and second:
+                script_name = _script_in_target(second)
+                if script_name:
+                    entry_point = script_name
+
+            # Case 2: direct script invocation: X.py ...
+            else:
+                script_name = _script_in_target(first)
+                if script_name:
+                    entry_point = script_name
+
         # Compact summary of what is being traced, to reduce console clutter.
         print(
             f"TRACE | cmd={command} | "
             f"codebase={self.codebase_name} | "
-            f"entry={self.entry_point} | "
+            f"entry={entry_point} | "
             f"python={self.target_python}"
         )
-        
-        # Parse command
-        cmd_parts = command.strip().split()
-        if cmd_parts[0].startswith('./'):
+
+        # Prepare arguments passed through to the traced app
+        if cmd_parts and cmd_parts[0].startswith("./"):
             vg_args = cmd_parts[1:] if len(cmd_parts) > 1 else []
         else:
             vg_args = cmd_parts
-        
+
         # Create tracer script (using standalone template helper)
         tracer_script = build_tracer_script(
             str(self.target_dir),
             self.codebase_name,
-            self.entry_point,
+            entry_point,
             vg_args,
         )
         
