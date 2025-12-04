@@ -702,6 +702,37 @@ class TraceViewerWidget(QtWidgets.QWidget):
             )
             item.setData(0, QtCore.Qt.UserRole, ("io", fa))
 
+        # Highlight execution rows that correspond to file I/O sources.
+        try:
+            io_locations = set()
+            for fa in file_accesses:
+                if fa.src_file and fa.src_line:
+                    io_locations.add((fa.src_file, int(fa.src_line)))
+
+            if io_locations:
+                io_highlight = QtGui.QColor("#fff3e0")  # soft peach for I/O
+                # root_execution is the first top-level item for Exec section
+                root_exec_item = root_execution
+                for i in range(root_exec_item.childCount()):
+                    child = root_exec_item.child(i)
+                    payload = child.data(0, QtCore.Qt.UserRole)
+                    if not payload:
+                        continue
+                    kind, fc = payload
+                    if kind != "func":
+                        continue
+                    key = (fc.file, int(fc.line))
+                    if key in io_locations:
+                        for col in range(0, self.left_tree.columnCount()):
+                            # Do not override entrypoint highlight; blend softly.
+                            existing = child.background(col)
+                            if existing.isValid():
+                                # If already highlighted (e.g. entry row), keep it.
+                                continue
+                            child.setBackground(col, io_highlight)
+        except Exception:
+            pass
+
         # Apply persisted preference for hiding import-time calls, if any.
         try:
             ui_cfg = getattr(self, "_llm_config", {}) or {}
