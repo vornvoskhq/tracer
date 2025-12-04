@@ -68,12 +68,12 @@ class CodeEditor(QsciScintilla):
         self.setWrapMode(QsciScintilla.WrapWord)
 
         # Highlight style for search results:
-        # - use a soft yellow box so text (usually dark) stays readable.
+        # - use a thin box outline so the underlying text color is unchanged.
         # - also add a left-margin marker per line with a match.
         self._find_indicator = 0
-        self.indicatorDefine(QsciScintilla.FullBoxIndicator, self._find_indicator)
-        self.setIndicatorForegroundColor(QtGui.QColor("#fff9c4"), self._find_indicator)  # pale yellow fill
-        self.setIndicatorOutlineColor(QtGui.QColor("#fbc02d"), self._find_indicator)     # darker border
+        self.indicatorDefine(QsciScintilla.StraightBoxIndicator, self._find_indicator)
+        # Only set the outline color; do not set a foreground fill so text color stays intact.
+        self.setIndicatorOutlineColor(QtGui.QColor("#fbc02d"), self._find_indicator)
 
         # Margin marker for search result lines (left side, similar to SciTE marks)
         self._find_marker = self.markerDefine(QsciScintilla.Background)
