@@ -471,6 +471,44 @@ class TraceViewerWidget(QtWidgets.QWidget):
     def _on_run_button_clicked(self):
         self.run_trace()
 
+    def _on_find_in_editor(self) -> None:
+        """
+        Simple Ctrl+F search in the right-hand code editor.
+        Prompts for a search term and highlights all matches.
+        """
+        if not hasattr(self, "editor") or self.editor is None:
+            return
+
+        # Use the last search term as default
+        default = getattr(self, "_last_find_text", "") or ""
+        text, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Find in File",
+            "Find:",
+            QtWidgets.QLineEdit.Normal,
+            default,
+        )
+        if not ok or not text:
+            return
+
+        self._last_find_text = text
+        # Highlight all matches
+        if hasattr(self.editor, "highlight_matches"):
+            self.editor.highlight_matches(text)
+
+        # Move cursor to the first match
+        try:
+            line_count = self.editor.lines()
+        except Exception:
+            return
+
+        for line in range(line_count):
+            line_text = self.editor.text(line)
+            idx = line_text.find(text)
+            if idx != -1:
+                self.editor.setCursorPosition(line, idx)
+                break
+
     # Slots ---------------------------------------------------------------
 
     def _on_trace_finished(
