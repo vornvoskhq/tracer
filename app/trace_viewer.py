@@ -67,18 +67,32 @@ class CodeEditor(QsciScintilla):
         # Always enable word wrap
         self.setWrapMode(QsciScintilla.WrapWord)
 
-        # Simple highlight style for search results (can be tuned further)
+        # Highlight style for search results:
+        # - use a soft yellow box so text (usually dark) stays readable.
+        # - also add a left-margin marker per line with a match.
         self._find_indicator = 0
-        self.indicatorDefine(QsciScintilla.StraightBoxIndicator, self._find_indicator)
-        self.setIndicatorForegroundColor(QtGui.QColor("#ffff00"), self._find_indicator)
-        self.setIndicatorOutlineColor(QtGui.QColor("#ffcc00"), self._find_indicator)
+        self.indicatorDefine(QsciScintilla.FullBoxIndicator, self._find_indicator)
+        self.setIndicatorForegroundColor(QtGui.QColor("#fff9c4"), self._find_indicator)  # pale yellow fill
+        self.setIndicatorOutlineColor(QtGui.QColor("#fbc02d"), self._find_indicator)     # darker border
+
+        # Margin marker for search result lines (left side, similar to SciTE marks)
+        self._find_marker = self.markerDefine(QsciScintilla.Background)
+        self.setMarkerBackgroundColor(QtGui.QColor("#ffe082"), self._find_marker)
+        # Use margin 1 for search markers (margin 0 is line numbers)
+        self.setMarginType(1, QsciScintilla.SymbolMargin)
+        self.setMarginWidth(1, 6)
+        self.setMarginSensitivity(1, False)
 
     def clear_find_highlights(self) -> None:
-        """Clear any existing search highlights."""
+        """Clear any existing search highlights and margin markers."""
         self.clearIndicatorRange(0, 0, self.lines(), 0, self._find_indicator)
+        try:
+            self.markerDeleteAll(self._find_marker)
+        except Exception:
+            pass
 
     def highlight_matches(self, text: str) -> None:
-        """Highlight all matches of 'text' in the editor."""
+        """Highlight all matches of 'text' in the editor and mark lines in the margin."""
         self.clear_find_highlights()
         if not text:
             return
@@ -87,12 +101,19 @@ class CodeEditor(QsciScintilla):
         for line in range(line_count):
             line_text = self.text(line)
             start = 0
+            line_had_match = False
             while True:
                 idx = line_text.find(text, start)
                 if idx == -1:
                     break
                 self.fillIndicatorRange(line, idx, line, idx + len(text), self._find_indicator)
+                line_had_match = True
                 start = idx + len(text)
+            if line_had_match:
+                try:
+                    self.markerAdd(line, self._find_marker)
+                except Exception:
+                    pass
 
     def _update_margin_line_numbers(self) -> None:
         """
