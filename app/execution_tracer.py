@@ -51,17 +51,6 @@ class ExecutionTrace:
 # NOTE: The standalone tracer script template and builder have been moved to
 # app/tracer_script.py. The legacy template and build_tracer_script definition
 # previously here are no longer used and have been removed for clarity.
-"""
-    )
-    
-    return TRACER_SCRIPT_TEMPLATE.substitute(
-        TARGET_DIR=target_dir_escaped,
-        CODEBASE_TITLE=codebase_name.title(),
-        ENTRY_POINT=entry_point,
-        CODEBASE_NAME=codebase_name,
-        CODEBASE_NAME_LOWER=codebase_name.lower(),
-        COMMAND_ARGS=command_args_repr,
-    )
 
 
 class MainExecutionTracer:
