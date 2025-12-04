@@ -432,6 +432,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
         # Update label to reflect current codebase (just top-level directory)
         self.codebase_label.setText(f"Codebase: {path.name}")
 
+        # Restore last used command for this codebase from config if available.
+        try:
+            cfg = getattr(self, "_llm_config", {}) or {}
+            ui_state = dict(cfg.get("ui") or {})
+            all_cmds = ui_state.get("last_commands") or {}
+            if isinstance(all_cmds, dict):
+                key = str(path.resolve())
+                last_cmd = all_cmds.get(key)
+                if isinstance(last_cmd, str) and last_cmd.strip():
+                    self.set_command(last_cmd)
+        except Exception:
+            # Non-fatal if config is missing or malformed.
+            pass
+
     def set_command(self, command: str):
         self._current_command = command
         self.command_edit.setText(command)
@@ -486,6 +500,23 @@ class TraceViewerWidget(QtWidgets.QWidget):
         worker.finished_with_result.connect(self._on_trace_finished)
         worker.error_occurred.connect(self._on_trace_error)
         self._trace_worker = worker
+
+        # Persist this command as the last used for this codebase in the config.
+        try:
+            cfg = getattr(self, "_llm_config", {}) or {}
+            ui_state = dict(cfg.get("ui") or {})
+            all_cmds = ui_state.get("last_commands")
+            if not isinstance(all_cmds, dict):
+                all_cmds = {}
+            all_cmds[str(codebase.resolve())] = self._current_command
+            ui_state["last_commands"] = all_cmds
+            cfg["ui"] = ui_state
+            save_llm_config(cfg)
+            self._llm_config = cfg
+            self._ui_state = ui_state
+        except Exception:
+            # Non-fatal if saving fails.
+            pass
 
         worker.start()
 
