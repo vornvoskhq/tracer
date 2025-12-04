@@ -67,6 +67,33 @@ class CodeEditor(QsciScintilla):
         # Always enable word wrap
         self.setWrapMode(QsciScintilla.WrapWord)
 
+        # Simple highlight style for search results (can be tuned further)
+        self._find_indicator = 0
+        self.indicatorDefine(QsciScintilla.StraightBoxIndicator, self._find_indicator)
+        self.setIndicatorForegroundColor(QtGui.QColor("#ffff00"), self._find_indicator)
+        self.setIndicatorOutlineColor(QtGui.QColor("#ffcc00"), self._find_indicator)
+
+    def clear_find_highlights(self) -> None:
+        """Clear any existing search highlights."""
+        self.clearIndicatorRange(0, 0, self.lines(), 0, self._find_indicator)
+
+    def highlight_matches(self, text: str) -> None:
+        """Highlight all matches of 'text' in the editor."""
+        self.clear_find_highlights()
+        if not text:
+            return
+        # Simple, case-sensitive search over the buffer
+        line_count = self.lines()
+        for line in range(line_count):
+            line_text = self.text(line)
+            start = 0
+            while True:
+                idx = line_text.find(text, start)
+                if idx == -1:
+                    break
+                self.fillIndicatorRange(line, idx, line, idx + len(text), self._find_indicator)
+                start = idx + len(text)
+
     def _update_margin_line_numbers(self) -> None:
         """
         Update the margin text to reflect the current base line number.
@@ -337,6 +364,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.editor = CodeEditor(right_container)
         right_layout.addWidget(self.editor, stretch=1)
 
+        # Editor search state (Ctrl+F)
+        self._last_find_text: str = ""
+        self._find_action = QtWidgets.QAction(self)
+        self._find_action.setShortcut(QtGui.QKeySequence.Find)
+        self._find_action.setShortcutContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self._find_action.triggered.connect(self._on_find_in_editor)
+        self.addAction(self._find_action)
+
         # Adjust splitter sizes: make summary vertically smaller. If we have
         # persisted sizes in the config, prefer those over the default stretch
         # factors so that the layout is restored across runs.
@@ -366,6 +401,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.run_button.clicked.connect(self._on_run_button_clicked)
         # Hitting Enter in the command box should trigger a trace run, for usability.
         self.command_edit.returnPressed.connect(self._on_run_button_clicked)
+        # Ctrl+F search action is created in _build_ui and added to this widget,
+        # no extra wiring needed here beyond standard shortcuts.
 
     # Public API ----------------------------------------------------------
 
