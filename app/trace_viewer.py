@@ -67,6 +67,54 @@ class CodeEditor(QsciScintilla):
         # Always enable word wrap
         self.setWrapMode(QsciScintilla.WrapWord)
 
+        # Highlight style for search results:
+        # - use a thin box outline so the underlying text color is unchanged.
+        # - also add a left-margin marker per line with a match.
+        self._find_indicator = 0
+        self.indicatorDefine(QsciScintilla.StraightBoxIndicator, self._find_indicator)
+        # Only set the outline color; do not set a foreground fill so text color stays intact.
+        self.setIndicatorOutlineColor(QtGui.QColor("#fbc02d"), self._find_indicator)
+
+        # Margin marker for search result lines (left side, similar to SciTE marks)
+        self._find_marker = self.markerDefine(QsciScintilla.Background)
+        self.setMarkerBackgroundColor(QtGui.QColor("#ffe082"), self._find_marker)
+        # Use margin 1 for search markers (margin 0 is line numbers)
+        self.setMarginType(1, QsciScintilla.SymbolMargin)
+        self.setMarginWidth(1, 6)
+        self.setMarginSensitivity(1, False)
+
+    def clear_find_highlights(self) -> None:
+        """Clear any existing search highlights and margin markers."""
+        self.clearIndicatorRange(0, 0, self.lines(), 0, self._find_indicator)
+        try:
+            self.markerDeleteAll(self._find_marker)
+        except Exception:
+            pass
+
+    def highlight_matches(self, text: str) -> None:
+        """Highlight all matches of 'text' in the editor and mark lines in the margin."""
+        self.clear_find_highlights()
+        if not text:
+            return
+        # Simple, case-sensitive search over the buffer
+        line_count = self.lines()
+        for line in range(line_count):
+            line_text = self.text(line)
+            start = 0
+            line_had_match = False
+            while True:
+                idx = line_text.find(text, start)
+                if idx == -1:
+                    break
+                self.fillIndicatorRange(line, idx, line, idx + len(text), self._find_indicator)
+                line_had_match = True
+                start = idx + len(text)
+            if line_had_match:
+                try:
+                    self.markerAdd(line, self._find_marker)
+                except Exception:
+                    pass
+
     def _update_margin_line_numbers(self) -> None:
         """
         Update the margin text to reflect the current base line number.
@@ -337,6 +385,14 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.editor = CodeEditor(right_container)
         right_layout.addWidget(self.editor, stretch=1)
 
+        # Editor search state (Ctrl+F)
+        self._last_find_text: str = ""
+        self._find_action = QtWidgets.QAction(self)
+        self._find_action.setShortcut(QtGui.QKeySequence.Find)
+        self._find_action.setShortcutContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self._find_action.triggered.connect(self._on_find_in_editor)
+        self.addAction(self._find_action)
+
         # Adjust splitter sizes: make summary vertically smaller. If we have
         # persisted sizes in the config, prefer those over the default stretch
         # factors so that the layout is restored across runs.
@@ -364,6 +420,10 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_entrypoints_button.clicked.connect(self._on_suggest_entrypoints_clicked)
         self.summary_config_button.clicked.connect(self._on_llm_config_button_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
+        # Hitting Enter in the command box should trigger a trace run, for usability.
+        self.command_edit.returnPressed.connect(self._on_run_button_clicked)
+        # Ctrl+F search action is created in _build_ui and added to this widget,
+        # no extra wiring needed here beyond standard shortcuts.
 
     # Public API ----------------------------------------------------------
 
@@ -371,6 +431,20 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self._current_codebase = path
         # Update label to reflect current codebase (just top-level directory)
         self.codebase_label.setText(f"Codebase: {path.name}")
+
+        # Restore last used command for this codebase from config if available.
+        try:
+            cfg = getattr(self, "_llm_config", {}) or {}
+            ui_state = dict(cfg.get("ui") or {})
+            all_cmds = ui_state.get("last_commands") or {}
+            if isinstance(all_cmds, dict):
+                key = str(path.resolve())
+                last_cmd = all_cmds.get(key)
+                if isinstance(last_cmd, str) and last_cmd.strip():
+                    self.set_command(last_cmd)
+        except Exception:
+            # Non-fatal if config is missing or malformed.
+            pass
 
     def set_command(self, command: str):
         self._current_command = command
@@ -427,10 +501,65 @@ class TraceViewerWidget(QtWidgets.QWidget):
         worker.error_occurred.connect(self._on_trace_error)
         self._trace_worker = worker
 
+        # Persist this command as the last used for this codebase in the config.
+        try:
+            cfg = getattr(self, "_llm_config", {}) or {}
+            ui_state = dict(cfg.get("ui") or {})
+            all_cmds = ui_state.get("last_commands")
+            if not isinstance(all_cmds, dict):
+                all_cmds = {}
+            all_cmds[str(codebase.resolve())] = self._current_command
+            ui_state["last_commands"] = all_cmds
+            cfg["ui"] = ui_state
+            save_llm_config(cfg)
+            self._llm_config = cfg
+            self._ui_state = ui_state
+        except Exception:
+            # Non-fatal if saving fails.
+            pass
+
         worker.start()
 
     def _on_run_button_clicked(self):
         self.run_trace()
+
+    def _on_find_in_editor(self) -> None:
+        """
+        Simple Ctrl+F search in the right-hand code editor.
+        Prompts for a search term and highlights all matches.
+        """
+        if not hasattr(self, "editor") or self.editor is None:
+            return
+
+        # Use the last search term as default
+        default = getattr(self, "_last_find_text", "") or ""
+        text, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Find in File",
+            "Find:",
+            QtWidgets.QLineEdit.Normal,
+            default,
+        )
+        if not ok or not text:
+            return
+
+        self._last_find_text = text
+        # Highlight all matches
+        if hasattr(self.editor, "highlight_matches"):
+            self.editor.highlight_matches(text)
+
+        # Move cursor to the first match
+        try:
+            line_count = self.editor.lines()
+        except Exception:
+            return
+
+        for line in range(line_count):
+            line_text = self.editor.text(line)
+            idx = line_text.find(text)
+            if idx != -1:
+                self.editor.setCursorPosition(line, idx)
+                break
 
     # Slots ---------------------------------------------------------------
 
@@ -572,6 +701,47 @@ class TraceViewerWidget(QtWidgets.QWidget):
                 ],
             )
             item.setData(0, QtCore.Qt.UserRole, ("io", fa))
+
+        # Highlight execution rows that correspond to file I/O sources.
+        try:
+            io_locations = set()
+            for fa in file_accesses:
+                if fa.src_file and fa.src_line:
+                    io_locations.add((fa.src_file, int(fa.src_line)))
+
+            if io_locations:
+                io_highlight = QtGui.QColor("#fff3e0")  # soft peach for I/O
+                # root_execution is the first top-level item for Exec section
+                root_exec_item = root_execution
+                for i in range(root_exec_item.childCount()):
+                    child = root_exec_item.child(i)
+                    payload = child.data(0, QtCore.Qt.UserRole)
+                    if not payload:
+                        continue
+                    kind, fc = payload
+                    if kind != "func":
+                        continue
+                    key = (fc.file, int(fc.line))
+                    if key in io_locations:
+                        for col in range(0, self.left_tree.columnCount()):
+                            # Do not override entrypoint highlight; blend softly.
+                            existing = child.background(col)
+                            if existing.isValid():
+                                # If already highlighted (e.g. entry row), keep it.
+                                continue
+                            child.setBackground(col, io_highlight)
+        except Exception:
+            pass
+
+        # Apply persisted preference for hiding import-time calls, if any.
+        try:
+            ui_cfg = getattr(self, "_llm_config", {}) or {}
+            ui_state = ui_cfg.get("ui") or {}
+            hide_imports = bool(ui_state.get("hide_import_rows", False))
+            if hide_imports:
+                self.set_import_rows_hidden(True)
+        except Exception:
+            pass
 
         self.left_tree.expandAll()
         # Make the Order column just wide enough for its contents
