@@ -364,6 +364,8 @@ class TraceViewerWidget(QtWidgets.QWidget):
         self.summary_entrypoints_button.clicked.connect(self._on_suggest_entrypoints_clicked)
         self.summary_config_button.clicked.connect(self._on_llm_config_button_clicked)
         self.run_button.clicked.connect(self._on_run_button_clicked)
+        # Hitting Enter in the command box should trigger a trace run, for usability.
+        self.command_edit.returnPressed.connect(self._on_run_button_clicked)
 
     # Public API ----------------------------------------------------------
 
