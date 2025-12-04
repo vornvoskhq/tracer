@@ -573,6 +573,16 @@ class TraceViewerWidget(QtWidgets.QWidget):
             )
             item.setData(0, QtCore.Qt.UserRole, ("io", fa))
 
+        # Apply persisted preference for hiding import-time calls, if any.
+        try:
+            ui_cfg = getattr(self, "_llm_config", {}) or {}
+            ui_state = ui_cfg.get("ui") or {}
+            hide_imports = bool(ui_state.get("hide_import_rows", False))
+            if hide_imports:
+                self.set_import_rows_hidden(True)
+        except Exception:
+            pass
+
         self.left_tree.expandAll()
         # Make the Order column just wide enough for its contents
         self.left_tree.resizeColumnToContents(1)
